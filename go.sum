@@ -16,6 +16,8 @@ github.com/pointlander/gradient v0.0.0-20200516002953-608b1181ccb3 h1:enzn203WHc
 github.com/pointlander/gradient v0.0.0-20200516002953-608b1181ccb3/go.mod h1:eou9DfKdTNKoulHfNbnIHb6VTZLLP9OC9K9gnHw+lA8=
 github.com/pointlander/gradient v0.0.0-20200516035550-4c33fc8190f5 h1:5Z8zhmj9nHjQuCB0UIJuTVEA+Z/lzda/eSMsnxZzBq0=
 github.com/pointlander/gradient v0.0.0-20200516035550-4c33fc8190f5/go.mod h1:eou9DfKdTNKoulHfNbnIHb6VTZLLP9OC9K9gnHw+lA8=
+github.com/pointlander/gradient v0.0.0-20200516193140-aac6bce80e4e h1:/i9reoGW4zoC8deg4O80AWySG6eFIeOWsOYu+hwhVtA=
+github.com/pointlander/gradient v0.0.0-20200516193140-aac6bce80e4e/go.mod h1:eou9DfKdTNKoulHfNbnIHb6VTZLLP9OC9K9gnHw+lA8=
 github.com/remyoudompheng/bigfft v0.0.0-20190728182440-6a916e37a237/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/exp v0.0.0-20180321215751-8460e604b9de/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
