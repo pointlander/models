@@ -31,6 +31,8 @@ const (
 	Width = Symbols + Space
 	// Batch is the batch size
 	Batch = 256
+	// Nets the number of nets to run in parallel
+	Nets = 8
 )
 
 var (
@@ -95,13 +97,14 @@ func main() {
 
 	max = 8
 
-	symbols := make([]tf32.V, 0, max)
-	for i := 0; i < max; i++ {
-		symbol := tf32.NewV(2*Symbols, Batch)
-		for i := 0; i < cap(symbol.X); i++ {
-			symbol.X = append(symbol.X, 0)
+	symbols := make([][]tf32.V, Nets)
+	for i := range symbols {
+		symbols[i] = make([]tf32.V, 0, max)
+		for j := 0; j < max; j++ {
+			symbol := tf32.NewV(2*Symbols, Batch)
+			symbol.X = symbol.X[:cap(symbol.X)]
+			symbols[i] = append(symbols[i], symbol)
 		}
-		symbols = append(symbols, symbol)
 	}
 	initial := tf32.NewV(2*Space, Batch)
 	for i := 0; i < cap(initial.X); i++ {
@@ -124,26 +127,28 @@ func main() {
 		w2.X[i] = x / factor
 	}
 
-	var deltas [][]float32
-	for _, p := range parameters {
-		deltas = append(deltas, make([]float32, len(p.X)))
+	deltas := make([][][]float32, Nets)
+	for i := range deltas {
+		for _, p := range parameters {
+			deltas[i] = append(deltas[i], make([]float32, len(p.X)))
+		}
 	}
 	symbol := tf32.NewV(2, 1)
 	symbol.X = append(symbol.X, 0, 2*Symbols)
 	space := tf32.NewV(2, 1)
 	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
 
-	l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[0].Meta(), initial.Meta())), b1.Meta()))
+	l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[0][0].Meta(), initial.Meta())), b1.Meta()))
 	l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
-	cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[1].Meta()))
-	for i := 1; i < max-1; i++ {
-		l1 = tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[i].Meta(), tf32.Slice(l2, space.Meta()))), b1.Meta()))
+	cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0][1].Meta()))
+	for j := 1; j < max-1; j++ {
+		l1 = tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[0][j].Meta(), tf32.Slice(l2, space.Meta()))), b1.Meta()))
 		l2 = tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
-		cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[i+1].Meta())))
+		cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0][j+1].Meta())))
 	}
 
 	iterations := 100
-	alpha, eta := float32(.4), float32(.6)
+	alpha, eta := float32(.4), float32(.6/Nets)
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
 	for i := 0; i < iterations; i++ {
@@ -153,26 +158,30 @@ func main() {
 		}
 
 		total := float32(0)
-		for i := 0; i < len(verses); i += Batch {
+		for i := 0; i < len(verses); i += Nets * Batch {
 			fmt.Printf(".")
-			for i := range symbols {
-				symbols[i].Zero()
-				for j := range symbols[i].X {
-					if j%2 == 0 {
-						symbols[i].X[j] = -1
-					} else {
-						symbols[i].X[j] = 0
+			for _, s := range symbols {
+				for i := range s {
+					s[i].Zero()
+					for j := range s[i].X {
+						if j%2 == 0 {
+							s[i].X[j] = -1
+						} else {
+							s[i].X[j] = 0
+						}
 					}
 				}
 			}
-			for j, verse := range verses[i : i+Batch] {
-				if len(verse) > max {
-					verse = verse[:max]
-				}
-				for k, symbol := range verse {
-					index := 2 * (j*Symbols + int(symbol))
-					symbols[k].X[index] = 0
-					symbols[k].X[index+1] = 1
+			for j, symbols := range symbols {
+				for k, verse := range verses[i+j*Batch : i+(j+1)*Batch] {
+					if len(verse) > max {
+						verse = verse[:max]
+					}
+					for l, symbol := range verse {
+						index := 2 * (k*Symbols + int(symbol))
+						symbols[l].X[index] = 0
+						symbols[l].X[index+1] = 1
+					}
 				}
 			}
 
@@ -180,28 +189,58 @@ func main() {
 				p.Zero()
 			}
 
-			total += tf32.Gradient(cost).X[0]
-
-			norm := float32(0)
-			for _, p := range parameters {
-				for _, d := range p.D {
-					norm += d * d
+			costs := make([]tf32.Meta, Nets)
+			params := [][]*tf32.V{parameters}
+			for i := range costs {
+				if i == 0 {
+					costs[i] = cost
+					continue
+				}
+				w1, b1 := w1.Copy(), b1.Copy()
+				w2, b2 := w2.Copy(), b2.Copy()
+				params = append(params, []*tf32.V{&w1, &b1, &w2, &b2})
+				l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[i][0].Meta(), initial.Meta())), b1.Meta()))
+				l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+				costs[i] = tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[i][1].Meta()))
+				for j := 1; j < max-1; j++ {
+					l1 = tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[i][j].Meta(), tf32.Slice(l2, space.Meta()))), b1.Meta()))
+					l2 = tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+					costs[i] = tf32.Add(costs[i], tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[i][j+1].Meta())))
 				}
 			}
-			norm = float32(math.Sqrt(float64(norm)))
-			if norm > 1 {
-				scaling := 1 / norm
-				for k, p := range parameters {
-					for l, d := range p.D {
-						deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
-						p.X[l] += deltas[k][l]
+
+			done := make(chan float32, Nets)
+			for _, cost := range costs {
+				go func(cost tf32.Meta) {
+					done <- tf32.Gradient(cost).X[0]
+				}(cost)
+			}
+			for range costs {
+				total += <-done
+			}
+
+			for i, parameters := range params {
+				norm := float32(0)
+				for _, p := range parameters {
+					for _, d := range p.D {
+						norm += d * d
 					}
 				}
-			} else {
-				for k, p := range parameters {
-					for l, d := range p.D {
-						deltas[k][l] = alpha*deltas[k][l] - eta*d
-						p.X[l] += deltas[k][l]
+				norm = float32(math.Sqrt(float64(norm)))
+				if norm > 1 {
+					scaling := 1 / norm
+					for k, p := range parameters {
+						for l, d := range p.D {
+							deltas[i][k][l] = alpha*deltas[i][k][l] - eta*d*scaling
+							p.X[l] += deltas[i][k][l]
+						}
+					}
+				} else {
+					for k, p := range parameters {
+						for l, d := range p.D {
+							deltas[i][k][l] = alpha*deltas[i][k][l] - eta*d
+							p.X[l] += deltas[i][k][l]
+						}
 					}
 				}
 			}
