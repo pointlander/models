@@ -148,7 +148,7 @@ func main() {
 	}
 
 	iterations := 100
-	alpha, eta := float32(.4), float32(.6/Nets)
+	alpha, eta := float32(.3), float32(.3/Nets)
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
 	for i := 0; i < iterations; i++ {
@@ -216,7 +216,7 @@ func main() {
 				}(cost)
 			}
 			for range costs {
-				total += <-done
+				total += <-done / Batch
 			}
 
 			for i, parameters := range params {
@@ -247,7 +247,7 @@ func main() {
 		}
 		fmt.Printf("\n")
 
-		fmt.Println(total, time.Now().Sub(start))
+		fmt.Println(i, total, time.Now().Sub(start))
 		start = time.Now()
 		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
 		if total < .001 {
