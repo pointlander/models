@@ -10,10 +10,12 @@ import (
 	"io/ioutil"
 	"math"
 	"math/rand"
+	"os"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -246,6 +248,40 @@ func main() {
 			}
 		}
 		fmt.Printf("\n")
+
+		set := Set{
+			Cost:  float64(total),
+			Epoch: uint64(i),
+		}
+		add := func(name string, w *tf32.V) {
+			shape := make([]int64, len(w.S))
+			for i := range shape {
+				shape[i] = int64(w.S[i])
+			}
+			weights := Weights{
+				Name:   name,
+				Shape:  shape,
+				Values: w.X,
+			}
+			set.Weights = append(set.Weights, &weights)
+		}
+		add("w1", &w1)
+		add("b1", &b1)
+		add("w2", &w2)
+		add("b2", &b2)
+		out, err := proto.Marshal(&set)
+		if err != nil {
+			panic(err)
+		}
+		output, err := os.Create(fmt.Sprintf("weights_%d.w", i))
+		if err != nil {
+			panic(err)
+		}
+		_, err = output.Write(out)
+		if err != nil {
+			panic(err)
+		}
+		output.Close()
 
 		fmt.Println(i, total, time.Now().Sub(start))
 		start = time.Now()
