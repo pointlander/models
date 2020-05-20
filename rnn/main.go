@@ -44,6 +44,10 @@ var (
 	PatternVerse = regexp.MustCompile(`\d+[:]\d+[A-Za-z:.,?;"' ()\t\r\n]+`)
 	// FlagVerbose enables verbose mode
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
+	// FlagLearn learn the model
+	FlagLearn = flag.Bool("learn", false, "learning mode")
+	// FlagInference load weights and generate probable strings
+	FlagInference = flag.String("inference", "", "inference mode")
 )
 
 // Testament is a bible testament
@@ -67,6 +71,72 @@ type Verse struct {
 func main() {
 	flag.Parse()
 
+	if *FlagLearn {
+		Learn()
+		return
+	} else if *FlagInference != "" {
+		Inference()
+		return
+	}
+}
+
+// Inference inference mode
+func Inference() {
+	in, err := ioutil.ReadFile(*FlagInference)
+	if err != nil {
+		panic(err)
+	}
+	set := Set{}
+	err = proto.Unmarshal(in, &set)
+	if err != nil {
+		panic(err)
+	}
+	w1, b1 := tf32.NewV(2*Width, 2*Width), tf32.NewV(2*Width)
+	w2, b2 := tf32.NewV(4*Width, Width), tf32.NewV(Width)
+	for _, weights := range set.Weights {
+		switch weights.Name {
+		case "w1":
+			w1.X = weights.Values
+		case "b1":
+			b1.X = weights.Values
+		case "w2":
+			w2.X = weights.Values
+		case "b2":
+			b2.X = weights.Values
+		}
+	}
+	input, state := tf32.NewV(2*Symbols, 1), tf32.NewV(2*Space, 1)
+	input.X = input.X[:cap(input.X)]
+	state.X = state.X[:cap(state.X)]
+	l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(input.Meta(), state.Meta())), b1.Meta()))
+	l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+	setSymbol := func(s byte) {
+		for i := range input.X {
+			if i%2 == 0 {
+				input.X[i] = -1
+			} else {
+				input.X[i] = 0
+			}
+		}
+		symbol := 2 * int(s)
+		input.X[symbol] = 0
+		input.X[symbol+1] = 1
+	}
+	setSymbol('i')
+	l2(func(a *tf32.V) bool {
+		symbols, max, symbol := a.X[:2*Symbols], float32(0), 0
+		for i := range symbols {
+			if x := symbols[i]; x > max {
+				max, symbol = x, i
+			}
+		}
+		fmt.Printf("%c %f\n", symbol>>2, max)
+		return true
+	})
+}
+
+// Learn learns the rnn model
+func Learn() {
 	testaments, verses, max := Bible(), make([]string, 0, 8), 0
 	for _, testament := range testaments {
 		if *FlagVerbose {
