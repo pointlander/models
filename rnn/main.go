@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -33,11 +34,11 @@ const (
 	Width = Symbols + Space
 	// Batch is the batch size
 	Batch = 256
-	// Nets the number of nets to run in parallel
-	Nets = 8
 )
 
 var (
+	// Nets the number of nets to run in parallel
+	Nets = runtime.NumCPU()
 	// PatternBook marks the start of a book
 	PatternBook = regexp.MustCompile(`\r\n\r\n\r\n\r\n[A-Za-z]+([ \t]+[A-Za-z:]+)*\r\n\r\n`)
 	// PatternVerse is a verse
@@ -113,7 +114,7 @@ func Inference() {
 	setSymbol := func(s byte) {
 		for i := range input.X {
 			if i%2 == 0 {
-				input.X[i] = -1
+				input.X[i] = 0
 			} else {
 				input.X[i] = 0
 			}
@@ -220,7 +221,7 @@ func Learn() {
 	}
 
 	iterations := 100
-	alpha, eta := float32(.3), float32(.3/Nets)
+	alpha, eta := float32(.3), float32(.3/float64(Nets))
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
 	for i := 0; i < iterations; i++ {
@@ -237,7 +238,7 @@ func Learn() {
 					s[i].Zero()
 					for j := range s[i].X {
 						if j%2 == 0 {
-							s[i].X[j] = -1
+							s[i].X[j] = 0
 						} else {
 							s[i].X[j] = 0
 						}
