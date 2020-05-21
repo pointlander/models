@@ -106,34 +106,50 @@ func Inference() {
 			b2.X = weights.Values
 		}
 	}
-	input, state := tf32.NewV(2*Symbols, 1), tf32.NewV(2*Space, 1)
-	input.X = input.X[:cap(input.X)]
-	state.X = state.X[:cap(state.X)]
-	l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(input.Meta(), state.Meta())), b1.Meta()))
-	l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
-	setSymbol := func(s byte) {
-		for i := range input.X {
-			if i%2 == 0 {
-				input.X[i] = 0
-			} else {
-				input.X[i] = 0
+	bestSum, best := float32(0.0), []byte{}
+	var search func(depth int, most []byte, previous *tf32.V, sum float32)
+	search = func(depth int, most []byte, previous *tf32.V, sum float32) {
+		if depth > 2 {
+			if sum > bestSum {
+				best, bestSum = most, sum
+				fmt.Println(string(best))
 			}
+			return
 		}
-		symbol := 2 * int(s)
-		input.X[symbol] = 0
-		input.X[symbol+1] = 1
+
+		input, state := tf32.NewV(2*Symbols, 1), tf32.NewV(2*Space, 1)
+		input.X = input.X[:cap(input.X)]
+		state.X = state.X[:cap(state.X)]
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(input.Meta(), previous.Meta())), b1.Meta()))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+		setSymbol := func(s byte) {
+			for i := range input.X {
+				if i%2 == 0 {
+					input.X[i] = 0
+				} else {
+					input.X[i] = 0
+				}
+			}
+			symbol := 2 * int(s)
+			input.X[symbol] = 0
+			input.X[symbol+1] = 1
+		}
+		setSymbol(most[len(most)-1])
+		l2(func(a *tf32.V) bool {
+			symbols := a.X[:2*Symbols]
+			copy(state.X, a.X[2*Symbols:])
+			for i := range symbols {
+				cp := make([]byte, len(most))
+				copy(cp, most)
+				cp = append(cp, byte(i))
+				search(depth+1, cp, &state, sum+symbols[i])
+			}
+			return true
+		})
 	}
-	setSymbol('i')
-	l2(func(a *tf32.V) bool {
-		symbols, max, symbol := a.X[:2*Symbols], float32(0), 0
-		for i := range symbols {
-			if x := symbols[i]; x > max {
-				max, symbol = x, i
-			}
-		}
-		fmt.Printf("%c %f\n", symbol>>2, max)
-		return true
-	})
+	state := tf32.NewV(2*Space, 1)
+	state.X = state.X[:cap(state.X)]
+	search(0, []byte{'G'}, &state, 0)
 }
 
 // Learn learns the rnn model
