@@ -34,6 +34,8 @@ const (
 	Width = Symbols + Space
 	// Batch is the batch size
 	Batch = 256
+	// Scale scales the neural network
+	Scale = 2
 )
 
 var (
@@ -92,8 +94,8 @@ func Inference() {
 	if err != nil {
 		panic(err)
 	}
-	w1, b1 := tf32.NewV(2*Width, 2*Width), tf32.NewV(2*Width)
-	w2, b2 := tf32.NewV(4*Width, Width), tf32.NewV(Width)
+	w1, b1 := tf32.NewV(2*Width, Scale*2*Width), tf32.NewV(Scale*2*Width)
+	w2, b2 := tf32.NewV(Scale*4*Width, Width), tf32.NewV(Width)
 	for _, weights := range set.Weights {
 		switch weights.Name {
 		case "w1":
@@ -106,12 +108,13 @@ func Inference() {
 			b2.X = weights.Values
 		}
 	}
-	bestSum, best := float32(0.0), []byte{}
-	var search func(depth int, most []byte, previous *tf32.V, sum float32)
-	search = func(depth int, most []byte, previous *tf32.V, sum float32) {
-		if depth > 2 {
+	bestSum, best := float32(0.0), []rune{}
+	var search func(depth int, most []rune, previous *tf32.V, sum float32)
+	search = func(depth int, most []rune, previous *tf32.V, sum float32) {
+		if depth > 1 {
 			if sum > bestSum {
 				best, bestSum = most, sum
+				fmt.Println(best)
 				fmt.Println(string(best))
 			}
 			return
@@ -122,7 +125,7 @@ func Inference() {
 		state.X = state.X[:cap(state.X)]
 		l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(input.Meta(), previous.Meta())), b1.Meta()))
 		l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
-		setSymbol := func(s byte) {
+		setSymbol := func(s rune) {
 			for i := range input.X {
 				if i%2 == 0 {
 					input.X[i] = 0
@@ -138,18 +141,20 @@ func Inference() {
 		l2(func(a *tf32.V) bool {
 			symbols := a.X[:2*Symbols]
 			copy(state.X, a.X[2*Symbols:])
-			for i := range symbols {
-				cp := make([]byte, len(most))
-				copy(cp, most)
-				cp = append(cp, byte(i))
-				search(depth+1, cp, &state, sum+symbols[i])
+			for i, symbol := range symbols {
+				if i&1 == 1 {
+					cp := make([]rune, len(most))
+					copy(cp, most)
+					cp = append(cp, rune(i>>1))
+					search(depth+1, cp, &state, sum+symbol)
+				}
 			}
 			return true
 		})
 	}
 	state := tf32.NewV(2*Space, 1)
 	state.X = state.X[:cap(state.X)]
-	search(0, []byte{'G'}, &state, 0)
+	search(0, []rune{'Y'}, &state, 0)
 }
 
 // Learn learns the rnn model
@@ -184,7 +189,7 @@ func Learn() {
 		panic("wrong number of verses")
 	}
 
-	max = 8
+	max = Scale * 8
 
 	symbols := make([][]tf32.V, Nets)
 	for i := range symbols {
@@ -199,8 +204,8 @@ func Learn() {
 	for i := 0; i < cap(initial.X); i++ {
 		initial.X = append(initial.X, 0)
 	}
-	w1, b1 := tf32.NewV(2*Width, 2*Width), tf32.NewV(2*Width)
-	w2, b2 := tf32.NewV(4*Width, Width), tf32.NewV(Width)
+	w1, b1 := tf32.NewV(2*Width, Scale*2*Width), tf32.NewV(Scale*2*Width)
+	w2, b2 := tf32.NewV(Scale*4*Width, Width), tf32.NewV(Width)
 	parameters := []*tf32.V{&w1, &b1, &w2, &b2}
 	for _, p := range parameters {
 		for i := 0; i < cap(p.X); i++ {
