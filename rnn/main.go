@@ -26,6 +26,8 @@ import (
 )
 
 const (
+	// NumberOfVerses is the number of verses in the bible
+	NumberOfVerses = 31102
 	// Symbols is the number of symbols
 	Symbols = 256
 	// Space is the state space of the Println
@@ -48,7 +50,7 @@ var (
 	// FlagVerbose enables verbose mode
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
 	// FlagLearn learn the model
-	FlagLearn = flag.Bool("learn", false, "learning mode")
+	FlagLearn = flag.String("learn", "variable", "learning mode")
 	// FlagInference load weights and generate probable strings
 	FlagInference = flag.String("inference", "", "inference mode")
 )
@@ -74,8 +76,14 @@ type Verse struct {
 func main() {
 	flag.Parse()
 
-	if *FlagLearn {
-		Learn()
+	if *FlagLearn != "" {
+		switch *FlagLearn {
+		case "fixed":
+			FixedLearn()
+		case "variable":
+			VariableLearn()
+		}
+
 		return
 	} else if *FlagInference != "" {
 		Inference()
@@ -157,39 +165,191 @@ func Inference() {
 	search(0, []rune{'Y'}, &state, 0)
 }
 
-// Learn learns the rnn model
-func Learn() {
-	testaments, verses, max := Bible(), make([]string, 0, 8), 0
-	for _, testament := range testaments {
-		if *FlagVerbose {
-			fmt.Printf("%s\n\n", testament.Name)
-		}
-		for _, book := range testament.Books {
-			if *FlagVerbose {
-				fmt.Printf(" %s\n", book.Name)
-			}
-			for _, verse := range book.Verses {
-				if *FlagVerbose {
-					fmt.Printf("  %s %s\n", verse.Number, verse.Verse)
-				}
-				if length := len(verse.Verse); length > max {
-					max = length
-				}
-				verses = append(verses, verse.Verse)
-			}
-			if *FlagVerbose {
-				fmt.Printf("\n")
-			}
-		}
-		if *FlagVerbose {
-			fmt.Printf("\n")
+// VariableLearn learns the rnn model
+func VariableLearn() {
+	verses, _ := Verses()
+
+	initial := tf32.NewV(2*Space, 1)
+	initial.X = initial.X[:cap(initial.X)]
+	w1, b1 := tf32.NewV(2*Width, Scale*2*Width), tf32.NewV(Scale*2*Width)
+	w2, b2 := tf32.NewV(Scale*4*Width, Width), tf32.NewV(Width)
+	parameters := []*tf32.V{&w1, &b1, &w2, &b2}
+	for _, p := range parameters {
+		for i := 0; i < cap(p.X); i++ {
+			p.X = append(p.X, Random32(-1, 1))
 		}
 	}
-	if len(verses) != 31102 {
-		panic("wrong number of verses")
+	factor := float32(math.Sqrt(2 * Width))
+	for i, x := range w1.X {
+		w1.X[i] = x / factor
+	}
+	factor = float32(math.Sqrt(4 * Width))
+	for i, x := range w2.X {
+		w2.X[i] = x / factor
 	}
 
-	max = Scale * 8
+	deltas := make([][]float32, 0, len(parameters))
+	for _, p := range parameters {
+		deltas = append(deltas, make([]float32, len(p.X)))
+	}
+
+	symbol := tf32.NewV(2, 1)
+	symbol.X = append(symbol.X, 0, 2*Symbols)
+	space := tf32.NewV(2, 1)
+	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
+
+	done := make(chan float32, 8)
+	learn := func(parameters []*tf32.V, verse string) {
+		w1, b1, w2, b2 := parameters[0], parameters[1], parameters[2], parameters[3]
+		verseSymbols := []rune(verse)
+		if len(verseSymbols) > 16 {
+			verseSymbols = verseSymbols[:16]
+		}
+		symbols := make([]tf32.V, 0, len(verseSymbols))
+		for _, s := range verseSymbols {
+			symbol := tf32.NewV(2*Symbols, 1)
+			symbol.X = symbol.X[:cap(symbol.X)]
+			index := 2 & int(s)
+			symbol.X[index] = 0
+			symbol.X[index+1] = 1
+			symbols = append(symbols, symbol)
+		}
+
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[0].Meta(), initial.Meta())), b1.Meta()))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+		cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[1].Meta()))
+		for j := 1; j < len(symbols)-1; j++ {
+			l1 = tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[j].Meta(), tf32.Slice(l2, space.Meta()))), b1.Meta()))
+			l2 = tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j+1].Meta())))
+		}
+
+		done <- tf32.Gradient(cost).X[0]
+	}
+
+	iterations := 100
+	alpha, eta := float32(.3), float32(.3/float64(Nets))
+	points := make(plotter.XYs, 0, iterations)
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		for i := range verses {
+			j := i + rand.Intn(len(verses)-i)
+			verses[i], verses[j] = verses[j], verses[i]
+		}
+
+		total := float32(0.0)
+		for j := 0; j < len(verses); j += Nets {
+			flight, copies := 0, make([][]*tf32.V, 0, Nets)
+			for k := 0; k < Nets && j+k < len(verses); k++ {
+				w1, b1, w2, b2 := w1.Copy(), b1.Copy(), w2.Copy(), b2.Copy()
+				cp := []*tf32.V{&w1, &b1, &w2, &b2}
+				copies = append(copies, cp)
+				go learn(cp, verses[j+k])
+				flight++
+			}
+			for j := 0; j < flight; j++ {
+				total += <-done
+			}
+
+			for _, parameters := range copies {
+				norm := float32(0)
+				for _, p := range parameters {
+					for _, d := range p.D {
+						norm += d * d
+					}
+				}
+				norm = float32(math.Sqrt(float64(norm)))
+				if norm > 1 {
+					scaling := 1 / norm
+					for k, p := range parameters {
+						for l, d := range p.D {
+							deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
+							p.X[l] += deltas[k][l]
+						}
+					}
+				} else {
+					for k, p := range parameters {
+						for l, d := range p.D {
+							deltas[k][l] = alpha*deltas[k][l] - eta*d
+							p.X[l] += deltas[k][l]
+						}
+					}
+				}
+			}
+			fmt.Printf(".")
+		}
+		fmt.Printf("\n")
+
+		set := Set{
+			Cost:  float64(total),
+			Epoch: uint64(i),
+		}
+		add := func(name string, w *tf32.V) {
+			shape := make([]int64, len(w.S))
+			for i := range shape {
+				shape[i] = int64(w.S[i])
+			}
+			weights := Weights{
+				Name:   name,
+				Shape:  shape,
+				Values: w.X,
+			}
+			set.Weights = append(set.Weights, &weights)
+		}
+		add("w1", &w1)
+		add("b1", &b1)
+		add("w2", &w2)
+		add("b2", &b2)
+		out, err := proto.Marshal(&set)
+		if err != nil {
+			panic(err)
+		}
+		output, err := os.Create(fmt.Sprintf("weights_%d.w", i))
+		if err != nil {
+			panic(err)
+		}
+		_, err = output.Write(out)
+		if err != nil {
+			panic(err)
+		}
+		output.Close()
+
+		fmt.Println(i, total/float32(NumberOfVerses), time.Now().Sub(start))
+		start = time.Now()
+		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
+		if total < .001 {
+			fmt.Println("stopping...")
+			break
+		}
+	}
+
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "epochs vs cost"
+	p.X.Label.Text = "epochs"
+	p.Y.Label.Text = "cost"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "epochs.png")
+	if err != nil {
+		panic(err)
+	}
+}
+
+// FixedLearn learns the rnn model
+func FixedLearn() {
+	verses, _ := Verses()
+	max := Scale * 8
 
 	symbols := make([][]tf32.V, Nets)
 	for i := range symbols {
@@ -405,6 +565,40 @@ func Learn() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// Verses gets the bible verses
+func Verses() ([]string, int) {
+	testaments, verses, max := Bible(), make([]string, 0, NumberOfVerses), 0
+	for _, testament := range testaments {
+		if *FlagVerbose {
+			fmt.Printf("%s\n\n", testament.Name)
+		}
+		for _, book := range testament.Books {
+			if *FlagVerbose {
+				fmt.Printf(" %s\n", book.Name)
+			}
+			for _, verse := range book.Verses {
+				if *FlagVerbose {
+					fmt.Printf("  %s %s\n", verse.Number, verse.Verse)
+				}
+				if length := len(verse.Verse); length > max {
+					max = length
+				}
+				verses = append(verses, verse.Verse)
+			}
+			if *FlagVerbose {
+				fmt.Printf("\n")
+			}
+		}
+		if *FlagVerbose {
+			fmt.Printf("\n")
+		}
+	}
+	if len(verses) != NumberOfVerses {
+		panic("wrong number of verses")
+	}
+	return verses, max
 }
 
 // Bible returns the bible
