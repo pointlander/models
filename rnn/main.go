@@ -47,10 +47,12 @@ var (
 	PatternBook = regexp.MustCompile(`\r\n\r\n\r\n\r\n[A-Za-z]+([ \t]+[A-Za-z:]+)*\r\n\r\n`)
 	// PatternVerse is a verse
 	PatternVerse = regexp.MustCompile(`\d+[:]\d+[A-Za-z:.,?;"' ()\t\r\n]+`)
+	// PatternWord is for splitting into words
+	PatternWord = regexp.MustCompile(`[ \t\r\n]+`)
 	// FlagVerbose enables verbose mode
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
 	// FlagLearn learn the model
-	FlagLearn = flag.String("learn", "variable", "learning mode")
+	FlagLearn = flag.String("learn", "", "learning mode")
 	// FlagInference load weights and generate probable strings
 	FlagInference = flag.String("inference", "", "inference mode")
 )
@@ -87,6 +89,19 @@ func main() {
 		return
 	} else if *FlagInference != "" {
 		Inference()
+		return
+	} else {
+		verses, words, max := Verses()
+		maxWord := 0
+		for _, word := range words {
+			if length := len(word); length > maxWord {
+				maxWord = length
+			}
+		}
+		fmt.Printf("number of verses %d\n", len(verses))
+		fmt.Printf("max verse length %d\n", max)
+		fmt.Printf("number of unique words %d\n", len(words))
+		fmt.Printf("max word length %d\n", maxWord)
 		return
 	}
 }
@@ -167,7 +182,7 @@ func Inference() {
 
 // VariableLearn learns the rnn model
 func VariableLearn() {
-	verses, _ := Verses()
+	verses, _, _ := Verses()
 
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
@@ -348,7 +363,7 @@ func VariableLearn() {
 
 // FixedLearn learns the rnn model
 func FixedLearn() {
-	verses, _ := Verses()
+	verses, _, _ := Verses()
 	max := Scale * 8
 
 	symbols := make([][]tf32.V, Nets)
@@ -568,8 +583,9 @@ func FixedLearn() {
 }
 
 // Verses gets the bible verses
-func Verses() ([]string, int) {
-	testaments, verses, max := Bible(), make([]string, 0, NumberOfVerses), 0
+func Verses() ([]string, []string, int) {
+	testaments, verses, words, max :=
+		Bible(), make([]string, 0, NumberOfVerses), make([]string, 0, 8), 0
 	for _, testament := range testaments {
 		if *FlagVerbose {
 			fmt.Printf("%s\n\n", testament.Name)
@@ -598,7 +614,19 @@ func Verses() ([]string, int) {
 	if len(verses) != NumberOfVerses {
 		panic("wrong number of verses")
 	}
-	return verses, max
+	seen := make(map[string]bool)
+	for _, verse := range verses {
+		verseWords := PatternWord.Split(verse, -1)
+		for _, word := range verseWords {
+			word = strings.Trim(word, ".?!")
+			if seen[word] {
+				continue
+			}
+			seen[word] = true
+			words = append(words, word)
+		}
+	}
+	return verses, words, max
 }
 
 // Bible returns the bible
