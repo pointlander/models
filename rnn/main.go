@@ -93,7 +93,7 @@ func main() {
 		Inference()
 		return
 	} else {
-		verses, words, max := Verses()
+		verses, words, max, maxWords := Verses()
 		maxWord := 0
 		for _, word := range words {
 			if length := len(word); length > maxWord {
@@ -102,6 +102,7 @@ func main() {
 		}
 		fmt.Printf("number of verses %d\n", len(verses))
 		fmt.Printf("max verse length %d\n", max)
+		fmt.Printf("max words in verse %d\n", maxWords)
 		fmt.Printf("number of unique words %d\n", len(words))
 		fmt.Printf("max word length %d\n", maxWord)
 		return
@@ -184,7 +185,7 @@ func Inference() {
 
 // HierarchicalLearn learns the ierarchical encoder decoder rnn model for words
 func HierarchicalLearn() {
-	_, words, _ := Verses()
+	_, words, _, _ := Verses()
 	fmt.Println(len(words))
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
@@ -377,7 +378,7 @@ func HierarchicalLearn() {
 
 // VariableLearn learns the rnn model
 func VariableLearn() {
-	verses, _, _ := Verses()
+	verses, _, _, _ := Verses()
 
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
@@ -558,7 +559,7 @@ func VariableLearn() {
 
 // FixedLearn learns the rnn model
 func FixedLearn() {
-	verses, _, _ := Verses()
+	verses, _, _, _ := Verses()
 	max := Scale * 8
 
 	symbols := make([][]tf32.V, Nets)
@@ -778,7 +779,7 @@ func FixedLearn() {
 }
 
 // Verses gets the bible verses
-func Verses() ([]string, []string, int) {
+func Verses() ([]string, []string, int, int) {
 	testaments, verses, words, max :=
 		Bible(), make([]string, 0, NumberOfVerses), make([]string, 0, 8), 0
 	for _, testament := range testaments {
@@ -809,9 +810,12 @@ func Verses() ([]string, []string, int) {
 	if len(verses) != NumberOfVerses {
 		panic("wrong number of verses")
 	}
-	seen := make(map[string]bool)
+	seen, maxWords := make(map[string]bool), 0
 	for _, verse := range verses {
 		verseWords := PatternWord.Split(verse, -1)
+		if length := len(verseWords); length > maxWords {
+			maxWords = length
+		}
 		for _, word := range verseWords {
 			word = strings.Trim(word, ".?!")
 			if seen[word] || len(word) == 0 {
@@ -821,7 +825,7 @@ func Verses() ([]string, []string, int) {
 			words = append(words, word)
 		}
 	}
-	return verses, words, max
+	return verses, words, max, maxWords
 }
 
 // Bible returns the bible
