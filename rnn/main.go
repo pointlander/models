@@ -261,6 +261,7 @@ func HierarchicalLearn() {
 		for j := 0; j < len(words); j += Nets {
 			flight, copies := 0, make([][]*tf32.V, 0, Nets)
 			for k := 0; k < Nets && j+k < len(words); k++ {
+				word := words[j+k]
 				aw1, ab1, aw2, ab2 := aw1.Copy(), ab1.Copy(), aw2.Copy(), ab2.Copy()
 				bw1, bb1, bw2, bb2 := bw1.Copy(), bb1.Copy(), bw2.Copy(), bb2.Copy()
 				cp := []*tf32.V{
@@ -268,7 +269,7 @@ func HierarchicalLearn() {
 					&bw1, &bb1, &bw2, &bb2,
 				}
 				copies = append(copies, cp)
-				go learn(cp, words[j+k])
+				go learn(cp, word)
 				flight++
 			}
 			for j := 0; j < flight; j++ {
@@ -813,7 +814,7 @@ func Verses() ([]string, []string, int) {
 		verseWords := PatternWord.Split(verse, -1)
 		for _, word := range verseWords {
 			word = strings.Trim(word, ".?!")
-			if seen[word] {
+			if seen[word] || len(word) == 0 {
 				continue
 			}
 			seen[word] = true
