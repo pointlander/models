@@ -109,7 +109,7 @@ func main() {
 
 // Inference inference mode
 func Inference() {
-	set := tf32.Set{}
+	set := tf32.NewSet()
 	cost, epoch, err := set.Open(*FlagInference)
 	if err != nil {
 		panic(err)
