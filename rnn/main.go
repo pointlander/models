@@ -10,13 +10,11 @@ import (
 	"io/ioutil"
 	"math"
 	"math/rand"
-	"os"
 	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -111,29 +109,12 @@ func main() {
 
 // Inference inference mode
 func Inference() {
-	in, err := ioutil.ReadFile(*FlagInference)
+	set := tf32.Set{}
+	cost, epoch, err := set.Open(*FlagInference)
 	if err != nil {
 		panic(err)
 	}
-	set := Set{}
-	err = proto.Unmarshal(in, &set)
-	if err != nil {
-		panic(err)
-	}
-	w1, b1 := tf32.NewV(2*Width, Scale*2*Width), tf32.NewV(Scale*2*Width)
-	w2, b2 := tf32.NewV(Scale*4*Width, Width), tf32.NewV(Width)
-	for _, weights := range set.Weights {
-		switch weights.Name {
-		case "w1":
-			w1.X = weights.Values
-		case "b1":
-			b1.X = weights.Values
-		case "w2":
-			w2.X = weights.Values
-		case "b2":
-			b2.X = weights.Values
-		}
-	}
+	fmt.Println(cost, epoch)
 	bestSum, best := float32(0.0), []rune{}
 	var search func(depth int, most []rune, previous *tf32.V, sum float32)
 	search = func(depth int, most []rune, previous *tf32.V, sum float32) {
@@ -149,8 +130,8 @@ func Inference() {
 		input, state := tf32.NewV(2*Symbols, 1), tf32.NewV(2*Space, 1)
 		input.X = input.X[:cap(input.X)]
 		state.X = state.X[:cap(state.X)]
-		l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(input.Meta(), previous.Meta())), b1.Meta()))
-		l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), tf32.Concat(input.Meta(), previous.Meta())), set.Get("b1")))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
 		setSymbol := func(s rune) {
 			for i := range input.X {
 				if i%2 == 0 {
@@ -189,23 +170,25 @@ func HierarchicalLearn() {
 	fmt.Println(len(words))
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
-	aw1, ab1 := tf32.NewV(2*Width, Scale*2*Width), tf32.NewV(Scale*2*Width)
-	aw2, ab2 := tf32.NewV(Scale*4*Width, Space), tf32.NewV(Space)
-	bw1, bb1 := tf32.NewV(2*Space, Scale*2*Width), tf32.NewV(Scale*2*Width)
-	bw2, bb2 := tf32.NewV(Scale*4*Width, Width), tf32.NewV(Width)
-	parameters := []*tf32.V{
-		&aw1, &ab1, &aw2, &ab2,
-		&bw1, &bb1, &bw2, &bb2,
-	}
-	for _, p := range parameters {
-		factor := float32(math.Sqrt(float64(p.S[0])))
-		for i := 0; i < cap(p.X); i++ {
-			p.X = append(p.X, Random32(-1, 1)/factor)
+	set := tf32.NewSet()
+	set.Add("aw1", 2*Width, Scale*2*Width)
+	set.Add("ab1", Scale*2*Width)
+	set.Add("aw2", Scale*4*Width, Space)
+	set.Add("ab2", Space)
+	set.Add("bw1", 2*Space, Scale*2*Width)
+	set.Add("bb1", Scale*2*Width)
+	set.Add("bw2", Scale*4*Width, Width)
+	set.Add("bb2", Width)
+	for i := range set.Weights {
+		w := &set.Weights[i]
+		factor := float32(math.Sqrt(float64(w.S[0])))
+		for i := 0; i < cap(w.X); i++ {
+			w.X = append(w.X, Random32(-1, 1)/factor)
 		}
 	}
 
-	deltas := make([][]float32, 0, len(parameters))
-	for _, p := range parameters {
+	deltas := make([][]float32, 0, len(set.Weights))
+	for _, p := range set.Weights {
 		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
@@ -215,9 +198,7 @@ func HierarchicalLearn() {
 	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
 
 	done := make(chan float32, 8)
-	learn := func(parameters []*tf32.V, word string) {
-		aw1, ab1, aw2, ab2 := parameters[0], parameters[1], parameters[2], parameters[3]
-		bw1, bb1, bw2, bb2 := parameters[4], parameters[5], parameters[6], parameters[7]
+	learn := func(set *tf32.Set, word string) {
 		wordSymbols := []rune(word)
 		symbols := make([]tf32.V, 0, len(wordSymbols))
 		for _, s := range wordSymbols {
@@ -229,19 +210,19 @@ func HierarchicalLearn() {
 			symbols = append(symbols, symbol)
 		}
 
-		l1 := tf32.Everett(tf32.Add(tf32.Mul(aw1.Meta(), tf32.Concat(symbols[0].Meta(), initial.Meta())), ab1.Meta()))
-		l2 := tf32.Everett(tf32.Add(tf32.Mul(aw2.Meta(), l1), ab2.Meta()))
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("ab1")))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 		for j := 1; j < len(symbols); j++ {
-			l1 = tf32.Everett(tf32.Add(tf32.Mul(aw1.Meta(), tf32.Concat(symbols[j].Meta(), l2)), ab1.Meta()))
-			l2 = tf32.Everett(tf32.Add(tf32.Mul(aw2.Meta(), l1), ab2.Meta()))
+			l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[j].Meta(), l2)), set.Get("ab1")))
+			l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 		}
 
-		l1 = tf32.Everett(tf32.Add(tf32.Mul(bw1.Meta(), l2), bb1.Meta()))
-		l2 = tf32.Everett(tf32.Add(tf32.Mul(bw2.Meta(), l1), bb2.Meta()))
+		l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw1"), l2), set.Get("bb1")))
+		l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
 		cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0].Meta()))
 		for j := 1; j < len(symbols); j++ {
-			l1 = tf32.Everett(tf32.Add(tf32.Mul(bw1.Meta(), tf32.Slice(l2, space.Meta())), bb1.Meta()))
-			l2 = tf32.Everett(tf32.Add(tf32.Mul(bw2.Meta(), l1), bb2.Meta()))
+			l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw1"), tf32.Slice(l2, space.Meta())), set.Get("bb1")))
+			l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
 			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j].Meta())))
 		}
 
@@ -260,26 +241,21 @@ func HierarchicalLearn() {
 
 		total := float32(0.0)
 		for j := 0; j < len(words); j += Nets {
-			flight, copies := 0, make([][]*tf32.V, 0, Nets)
+			flight, copies := 0, make([]*tf32.Set, 0, Nets)
 			for k := 0; k < Nets && j+k < len(words); k++ {
 				word := words[j+k]
-				aw1, ab1, aw2, ab2 := aw1.Copy(), ab1.Copy(), aw2.Copy(), ab2.Copy()
-				bw1, bb1, bw2, bb2 := bw1.Copy(), bb1.Copy(), bw2.Copy(), bb2.Copy()
-				cp := []*tf32.V{
-					&aw1, &ab1, &aw2, &ab2,
-					&bw1, &bb1, &bw2, &bb2,
-				}
-				copies = append(copies, cp)
-				go learn(cp, word)
+				cp := set.Copy()
+				copies = append(copies, &cp)
+				go learn(&cp, word)
 				flight++
 			}
 			for j := 0; j < flight; j++ {
 				total += <-done
 			}
 
-			for _, parameters := range copies {
+			for _, set := range copies {
 				norm := float32(0)
-				for _, p := range parameters {
+				for _, p := range set.Weights {
 					for _, d := range p.D {
 						norm += d * d
 					}
@@ -287,14 +263,14 @@ func HierarchicalLearn() {
 				norm = float32(math.Sqrt(float64(norm)))
 				if norm > 1 {
 					scaling := 1 / norm
-					for k, p := range parameters {
+					for k, p := range set.Weights {
 						for l, d := range p.D {
 							deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
 							p.X[l] += deltas[k][l]
 						}
 					}
 				} else {
-					for k, p := range parameters {
+					for k, p := range set.Weights {
 						for l, d := range p.D {
 							deltas[k][l] = alpha*deltas[k][l] - eta*d
 							p.X[l] += deltas[k][l]
@@ -306,43 +282,10 @@ func HierarchicalLearn() {
 		}
 		fmt.Printf("\n")
 
-		set := Set{
-			Cost:  float64(total),
-			Epoch: uint64(i),
-		}
-		add := func(name string, w *tf32.V) {
-			shape := make([]int64, len(w.S))
-			for i := range shape {
-				shape[i] = int64(w.S[i])
-			}
-			weights := Weights{
-				Name:   name,
-				Shape:  shape,
-				Values: w.X,
-			}
-			set.Weights = append(set.Weights, &weights)
-		}
-		add("aw1", &aw1)
-		add("ab1", &ab1)
-		add("aw2", &aw2)
-		add("ab2", &ab2)
-		add("aw1", &bw1)
-		add("ab1", &bb1)
-		add("aw2", &bw2)
-		add("ab2", &bb2)
-		out, err := proto.Marshal(&set)
+		err := set.Save(fmt.Sprintf("weights_%d.w", i), total, i)
 		if err != nil {
 			panic(err)
 		}
-		output, err := os.Create(fmt.Sprintf("weights_%d.w", i))
-		if err != nil {
-			panic(err)
-		}
-		_, err = output.Write(out)
-		if err != nil {
-			panic(err)
-		}
-		output.Close()
 
 		fmt.Println(i, total/float32(NumberOfVerses), time.Now().Sub(start))
 		start = time.Now()
@@ -382,25 +325,21 @@ func VariableLearn() {
 
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
-	w1, b1 := tf32.NewV(2*Width, Scale*2*Width), tf32.NewV(Scale*2*Width)
-	w2, b2 := tf32.NewV(Scale*4*Width, Width), tf32.NewV(Width)
-	parameters := []*tf32.V{&w1, &b1, &w2, &b2}
-	for _, p := range parameters {
-		for i := 0; i < cap(p.X); i++ {
-			p.X = append(p.X, Random32(-1, 1))
+	set := tf32.NewSet()
+	set.Add("w1", 2*Width, Scale*2*Width)
+	set.Add("b1", Scale*2*Width)
+	set.Add("w2", Scale*4*Width, Width)
+	set.Add("b2", Width)
+	for i := range set.Weights {
+		w := &set.Weights[i]
+		factor := float32(math.Sqrt(float64(w.S[0])))
+		for i := 0; i < cap(w.X); i++ {
+			w.X = append(w.X, Random32(-1, 1)/factor)
 		}
 	}
-	factor := float32(math.Sqrt(2 * Width))
-	for i, x := range w1.X {
-		w1.X[i] = x / factor
-	}
-	factor = float32(math.Sqrt(4 * Width))
-	for i, x := range w2.X {
-		w2.X[i] = x / factor
-	}
 
-	deltas := make([][]float32, 0, len(parameters))
-	for _, p := range parameters {
+	deltas := make([][]float32, 0, len(set.Weights))
+	for _, p := range set.Weights {
 		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
@@ -410,8 +349,7 @@ func VariableLearn() {
 	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
 
 	done := make(chan float32, 8)
-	learn := func(parameters []*tf32.V, verse string) {
-		w1, b1, w2, b2 := parameters[0], parameters[1], parameters[2], parameters[3]
+	learn := func(set *tf32.Set, verse string) {
 		verseSymbols := []rune(verse)
 		if len(verseSymbols) > 16 {
 			verseSymbols = verseSymbols[:16]
@@ -426,12 +364,12 @@ func VariableLearn() {
 			symbols = append(symbols, symbol)
 		}
 
-		l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[0].Meta(), initial.Meta())), b1.Meta()))
-		l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("b1")))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
 		cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[1].Meta()))
 		for j := 1; j < len(symbols)-1; j++ {
-			l1 = tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[j].Meta(), tf32.Slice(l2, space.Meta()))), b1.Meta()))
-			l2 = tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+			l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), tf32.Concat(symbols[j].Meta(), tf32.Slice(l2, space.Meta()))), set.Get("b1")))
+			l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
 			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j+1].Meta())))
 		}
 
@@ -450,21 +388,20 @@ func VariableLearn() {
 
 		total := float32(0.0)
 		for j := 0; j < len(verses); j += Nets {
-			flight, copies := 0, make([][]*tf32.V, 0, Nets)
+			flight, copies := 0, make([]*tf32.Set, 0, Nets)
 			for k := 0; k < Nets && j+k < len(verses); k++ {
-				w1, b1, w2, b2 := w1.Copy(), b1.Copy(), w2.Copy(), b2.Copy()
-				cp := []*tf32.V{&w1, &b1, &w2, &b2}
-				copies = append(copies, cp)
-				go learn(cp, verses[j+k])
+				cp := set.Copy()
+				copies = append(copies, &cp)
+				go learn(&cp, verses[j+k])
 				flight++
 			}
 			for j := 0; j < flight; j++ {
 				total += <-done
 			}
 
-			for _, parameters := range copies {
+			for _, set := range copies {
 				norm := float32(0)
-				for _, p := range parameters {
+				for _, p := range set.Weights {
 					for _, d := range p.D {
 						norm += d * d
 					}
@@ -472,14 +409,14 @@ func VariableLearn() {
 				norm = float32(math.Sqrt(float64(norm)))
 				if norm > 1 {
 					scaling := 1 / norm
-					for k, p := range parameters {
+					for k, p := range set.Weights {
 						for l, d := range p.D {
 							deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
 							p.X[l] += deltas[k][l]
 						}
 					}
 				} else {
-					for k, p := range parameters {
+					for k, p := range set.Weights {
 						for l, d := range p.D {
 							deltas[k][l] = alpha*deltas[k][l] - eta*d
 							p.X[l] += deltas[k][l]
@@ -491,39 +428,10 @@ func VariableLearn() {
 		}
 		fmt.Printf("\n")
 
-		set := Set{
-			Cost:  float64(total),
-			Epoch: uint64(i),
-		}
-		add := func(name string, w *tf32.V) {
-			shape := make([]int64, len(w.S))
-			for i := range shape {
-				shape[i] = int64(w.S[i])
-			}
-			weights := Weights{
-				Name:   name,
-				Shape:  shape,
-				Values: w.X,
-			}
-			set.Weights = append(set.Weights, &weights)
-		}
-		add("w1", &w1)
-		add("b1", &b1)
-		add("w2", &w2)
-		add("b2", &b2)
-		out, err := proto.Marshal(&set)
+		err := set.Save(fmt.Sprintf("weights_%d.w", i), total, i)
 		if err != nil {
 			panic(err)
 		}
-		output, err := os.Create(fmt.Sprintf("weights_%d.w", i))
-		if err != nil {
-			panic(err)
-		}
-		_, err = output.Write(out)
-		if err != nil {
-			panic(err)
-		}
-		output.Close()
 
 		fmt.Println(i, total/float32(NumberOfVerses), time.Now().Sub(start))
 		start = time.Now()
@@ -575,26 +483,22 @@ func FixedLearn() {
 	for i := 0; i < cap(initial.X); i++ {
 		initial.X = append(initial.X, 0)
 	}
-	w1, b1 := tf32.NewV(2*Width, Scale*2*Width), tf32.NewV(Scale*2*Width)
-	w2, b2 := tf32.NewV(Scale*4*Width, Width), tf32.NewV(Width)
-	parameters := []*tf32.V{&w1, &b1, &w2, &b2}
-	for _, p := range parameters {
-		for i := 0; i < cap(p.X); i++ {
-			p.X = append(p.X, Random32(-1, 1))
+	set := tf32.NewSet()
+	set.Add("w1", 2*Width, Scale*2*Width)
+	set.Add("b1", Scale*2*Width)
+	set.Add("w2", Scale*4*Width, Width)
+	set.Add("b2", Width)
+	for i := range set.Weights {
+		w := &set.Weights[i]
+		factor := float32(math.Sqrt(float64(w.S[0])))
+		for i := 0; i < cap(w.X); i++ {
+			w.X = append(w.X, Random32(-1, 1)/factor)
 		}
-	}
-	factor := float32(math.Sqrt(2 * Width))
-	for i, x := range w1.X {
-		w1.X[i] = x / factor
-	}
-	factor = float32(math.Sqrt(4 * Width))
-	for i, x := range w2.X {
-		w2.X[i] = x / factor
 	}
 
 	deltas := make([][][]float32, Nets)
 	for i := range deltas {
-		for _, p := range parameters {
+		for _, p := range set.Weights {
 			deltas[i] = append(deltas[i], make([]float32, len(p.X)))
 		}
 	}
@@ -603,12 +507,12 @@ func FixedLearn() {
 	space := tf32.NewV(2, 1)
 	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
 
-	l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[0][0].Meta(), initial.Meta())), b1.Meta()))
-	l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+	l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), tf32.Concat(symbols[0][0].Meta(), initial.Meta())), set.Get("b1")))
+	l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
 	cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0][1].Meta()))
 	for j := 1; j < max-1; j++ {
-		l1 = tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[0][j].Meta(), tf32.Slice(l2, space.Meta()))), b1.Meta()))
-		l2 = tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+		l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), tf32.Concat(symbols[0][j].Meta(), tf32.Slice(l2, space.Meta()))), set.Get("b1")))
+		l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
 		cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0][j+1].Meta())))
 	}
 
@@ -650,26 +554,23 @@ func FixedLearn() {
 				}
 			}
 
-			for _, p := range parameters {
-				p.Zero()
-			}
+			set.Zero()
 
 			costs := make([]tf32.Meta, Nets)
-			params := [][]*tf32.V{parameters}
+			sets := []*tf32.Set{&set}
 			for i := range costs {
 				if i == 0 {
 					costs[i] = cost
 					continue
 				}
-				w1, b1 := w1.Copy(), b1.Copy()
-				w2, b2 := w2.Copy(), b2.Copy()
-				params = append(params, []*tf32.V{&w1, &b1, &w2, &b2})
-				l1 := tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[i][0].Meta(), initial.Meta())), b1.Meta()))
-				l2 := tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+				set := set.Copy()
+				sets = append(sets, &set)
+				l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), tf32.Concat(symbols[i][0].Meta(), initial.Meta())), set.Get("b1")))
+				l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
 				costs[i] = tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[i][1].Meta()))
 				for j := 1; j < max-1; j++ {
-					l1 = tf32.Everett(tf32.Add(tf32.Mul(w1.Meta(), tf32.Concat(symbols[i][j].Meta(), tf32.Slice(l2, space.Meta()))), b1.Meta()))
-					l2 = tf32.Everett(tf32.Add(tf32.Mul(w2.Meta(), l1), b2.Meta()))
+					l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), tf32.Concat(symbols[i][j].Meta(), tf32.Slice(l2, space.Meta()))), set.Get("b1")))
+					l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
 					costs[i] = tf32.Add(costs[i], tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[i][j+1].Meta())))
 				}
 			}
@@ -684,9 +585,9 @@ func FixedLearn() {
 				total += <-done / Batch
 			}
 
-			for i, parameters := range params {
+			for _, set := range sets {
 				norm := float32(0)
-				for _, p := range parameters {
+				for _, p := range set.Weights {
 					for _, d := range p.D {
 						norm += d * d
 					}
@@ -694,14 +595,14 @@ func FixedLearn() {
 				norm = float32(math.Sqrt(float64(norm)))
 				if norm > 1 {
 					scaling := 1 / norm
-					for k, p := range parameters {
+					for k, p := range set.Weights {
 						for l, d := range p.D {
 							deltas[i][k][l] = alpha*deltas[i][k][l] - eta*d*scaling
 							p.X[l] += deltas[i][k][l]
 						}
 					}
 				} else {
-					for k, p := range parameters {
+					for k, p := range set.Weights {
 						for l, d := range p.D {
 							deltas[i][k][l] = alpha*deltas[i][k][l] - eta*d
 							p.X[l] += deltas[i][k][l]
@@ -712,39 +613,10 @@ func FixedLearn() {
 		}
 		fmt.Printf("\n")
 
-		set := Set{
-			Cost:  float64(total),
-			Epoch: uint64(i),
-		}
-		add := func(name string, w *tf32.V) {
-			shape := make([]int64, len(w.S))
-			for i := range shape {
-				shape[i] = int64(w.S[i])
-			}
-			weights := Weights{
-				Name:   name,
-				Shape:  shape,
-				Values: w.X,
-			}
-			set.Weights = append(set.Weights, &weights)
-		}
-		add("w1", &w1)
-		add("b1", &b1)
-		add("w2", &w2)
-		add("b2", &b2)
-		out, err := proto.Marshal(&set)
+		err := set.Save(fmt.Sprintf("weights_%d.w", i), total, i)
 		if err != nil {
 			panic(err)
 		}
-		output, err := os.Create(fmt.Sprintf("weights_%d.w", i))
-		if err != nil {
-			panic(err)
-		}
-		_, err = output.Write(out)
-		if err != nil {
-			panic(err)
-		}
-		output.Close()
 
 		fmt.Println(i, total, time.Now().Sub(start))
 		start = time.Now()
