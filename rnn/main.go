@@ -414,7 +414,7 @@ func VariableLearn() {
 		for _, s := range verseSymbols {
 			symbol := tf32.NewV(2*Symbols, 1)
 			symbol.X = symbol.X[:cap(symbol.X)]
-			index := 2 & int(s)
+			index := 2 * int(s)
 			symbol.X[index] = 0
 			symbol.X[index+1] = 1
 			symbols = append(symbols, symbol)
