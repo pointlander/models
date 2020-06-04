@@ -236,7 +236,7 @@ func HierarchicalLearn() {
 	set.Add("bw2", Scale*4*Width, Width)
 	set.Add("bb2", Width)
 	for i := range set.Weights {
-		w := &set.Weights[i]
+		w := set.Weights[i]
 		factor := float32(math.Sqrt(float64(w.S[0])))
 		for i := 0; i < cap(w.X); i++ {
 			w.X = append(w.X, Random32(-1, 1)/factor)
@@ -387,7 +387,7 @@ func VariableLearn() {
 	set.Add("w2", Scale*4*Width, Width)
 	set.Add("b2", Width)
 	for i := range set.Weights {
-		w := &set.Weights[i]
+		w := set.Weights[i]
 		factor := float32(math.Sqrt(float64(w.S[0])))
 		for i := 0; i < cap(w.X); i++ {
 			w.X = append(w.X, Random32(-1, 1)/factor)
@@ -545,7 +545,7 @@ func FixedLearn() {
 	set.Add("w2", Scale*4*Width, Width)
 	set.Add("b2", Width)
 	for i := range set.Weights {
-		w := &set.Weights[i]
+		w := set.Weights[i]
 		factor := float32(math.Sqrt(float64(w.S[0])))
 		for i := 0; i < cap(w.X); i++ {
 			w.X = append(w.X, Random32(-1, 1)/factor)
