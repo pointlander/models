@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agnivade/levenshtein"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -54,7 +55,7 @@ var (
 	// FlagInference load weights and generate probable strings
 	FlagInference = flag.String("inference", "", "inference mode")
 	// FlagWords test words seq2seq model
-	FlagWords = flag.String("words", "", "test words seq2seq model")
+	FlagWords = flag.Bool("words", false, "test words seq2seq model")
 )
 
 // Testament is a bible testament
@@ -90,7 +91,7 @@ func main() {
 
 		return
 	} else if *FlagInference != "" {
-		if *FlagWords != "" {
+		if *FlagWords {
 			WordsInference()
 		} else {
 			Inference()
@@ -113,54 +114,81 @@ func main() {
 	}
 }
 
+/*
+ * weights-6-2-2020
+ * 24338
+ * 12308.803 99
+ * 0.8142411044457227 0.39095242008381953
+ */
+
 // WordsInference test words seq2seq
 func WordsInference() {
+	_, words, _, _ := Verses()
+	fmt.Println(len(words))
+
 	set := tf32.NewSet()
 	cost, epoch, err := set.Open(*FlagInference)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(cost, epoch)
-	symbol := tf32.NewV(2*Symbols, 1)
-	symbol.X = symbol.X[:cap(symbol.X)]
-	state := tf32.NewV(2*Space, 1)
-	state.X = state.X[:cap(state.X)]
 
-	l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbol.Meta(), state.Meta())), set.Get("ab1")))
-	l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
-	for _, s := range *FlagWords {
-		for i := range symbol.X {
-			symbol.X[i] = 0
+	autoencode := func(word string) string {
+		autoencoded := ""
+
+		symbol := tf32.NewV(2*Symbols, 1)
+		symbol.X = symbol.X[:cap(symbol.X)]
+		state := tf32.NewV(2*Space, 1)
+		state.X = state.X[:cap(state.X)]
+
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbol.Meta(), state.Meta())), set.Get("ab1")))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+		for _, s := range word {
+			for i := range symbol.X {
+				symbol.X[i] = 0
+			}
+			index := 2 * int(s)
+			symbol.X[index] = 0
+			symbol.X[index+1] = 1
+			l2(func(a *tf32.V) bool {
+				copy(state.X, a.X)
+				return true
+			})
 		}
-		index := 2 * int(s)
-		symbol.X[index] = 0
-		symbol.X[index+1] = 1
-		l2(func(a *tf32.V) bool {
-			copy(state.X, a.X)
-			return true
-		})
-	}
 
-	fmt.Printf("'")
-	l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw1"), state.Meta()), set.Get("bb1")))
-	l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
-	for range *FlagWords {
-		l2(func(a *tf32.V) bool {
-			symbols := a.X[:2*Symbols]
-			copy(state.X, a.X[2*Symbols:])
-			max, maxSymbol := float32(0), rune('a')
-			for i, symbol := range symbols {
-				if i&1 == 1 {
-					if symbol > max {
-						max, maxSymbol = symbol, rune(i>>1)
+		l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw1"), state.Meta()), set.Get("bb1")))
+		l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
+		for range word {
+			l2(func(a *tf32.V) bool {
+				symbols := a.X[:2*Symbols]
+				copy(state.X, a.X[2*Symbols:])
+				max, maxSymbol := float32(0), rune('a')
+				for i, symbol := range symbols {
+					if i&1 == 1 {
+						if symbol > max {
+							max, maxSymbol = symbol, rune(i>>1)
+						}
 					}
 				}
-			}
-			fmt.Printf("%c", maxSymbol)
-			return true
-		})
+				autoencoded += fmt.Sprintf("%c", maxSymbol)
+				return true
+			})
+		}
+		return autoencoded
 	}
-	fmt.Printf("'\n")
+
+	correct, distance := 0, 0
+	for _, word := range words {
+		autoencoded := autoencode(word)
+		if autoencoded == word {
+			correct++
+		}
+		distance += levenshtein.ComputeDistance(word, autoencoded)
+	}
+	fmt.Println(
+		float64(correct)/float64(len(words)),
+		float64(distance)/float64(len(words)),
+	)
 }
 
 // Inference inference mode
