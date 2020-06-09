@@ -133,6 +133,51 @@ func WordsInference() {
 	}
 	fmt.Println(cost, epoch)
 
+	sum, sumAbs, sumOfSquares, count := float32(0.0), float32(0.0), float32(0.0), 0
+	min, max := float32(math.MaxFloat32), float32(-math.MaxFloat32)
+	small := 0
+	histogram := make([]int, 0, 8)
+	for _, weights := range set.Weights {
+		last := 0
+		for i, w := range weights.X {
+			sum += w
+			aw := w
+			if aw < 0 {
+				aw = -aw
+			}
+			sumAbs += aw
+			sumOfSquares += w * w
+			count++
+			if w < min {
+				min = w
+			}
+			if w > max {
+				max = w
+			}
+			if float64(w) < 1.0/(1<<16) {
+				small++
+				if i != 0 {
+					diff := i - last
+					if diff >= len(histogram) {
+						n := make([]int, diff+1)
+						copy(n, histogram)
+						histogram = n
+					}
+					histogram[diff]++
+				}
+				last = i
+			}
+		}
+	}
+	average := sum / float32(count)
+	fmt.Println("average", average)
+	fmt.Println("abs average", sumAbs/float32(count))
+	fmt.Println("variance", sumOfSquares/float32(count)-average*average)
+	fmt.Println("min", min)
+	fmt.Println("max", max)
+	fmt.Println("small", float32(small)/float32(count))
+	fmt.Println("histogram", histogram)
+
 	autoencode := func(word string) string {
 		autoencoded := ""
 
