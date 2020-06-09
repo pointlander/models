@@ -154,7 +154,7 @@ func WordsInference() {
 			if w > max {
 				max = w
 			}
-			if float64(w) < 1.0/(1<<16) {
+			if float64(aw) < 1.0/(1<<15) {
 				small++
 				if i != 0 {
 					diff := i - last
@@ -176,7 +176,7 @@ func WordsInference() {
 	fmt.Println("min", min)
 	fmt.Println("max", max)
 	fmt.Println("small", float32(small)/float32(count))
-	fmt.Println("histogram", histogram)
+	//fmt.Println("histogram", histogram)
 
 	autoencode := func(word string) string {
 		autoencoded := ""
