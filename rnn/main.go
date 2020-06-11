@@ -56,6 +56,8 @@ var (
 	FlagInference = flag.String("inference", "", "inference mode")
 	// FlagWords test words seq2seq model
 	FlagWords = flag.Bool("words", false, "test words seq2seq model")
+	// FlagBrain test words with bfloat16
+	FlagBrain = flag.Bool("brain", false, "test words with bfloat16")
 )
 
 // Testament is a bible testament
@@ -177,6 +179,16 @@ func WordsInference() {
 	fmt.Println("max", max)
 	fmt.Println("small", float32(small)/float32(count))
 	//fmt.Println("histogram", histogram)
+
+	if *FlagBrain {
+		for _, weights := range set.Weights {
+			for i, w := range weights.X {
+				bits := math.Float32bits(w)
+				x := uint16(bits >> 16)
+				weights.X[i] = math.Float32frombits(uint32(x) << 16)
+			}
+		}
+	}
 
 	autoencode := func(word string) string {
 		autoencoded := ""
