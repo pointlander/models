@@ -244,7 +244,7 @@ func WordsInference() {
 	}
 	fmt.Println(
 		float64(correct)/float64(len(words)),
-		float64(distance)/float64(len(words)),
+		float64(distance)/float64(len(words)-correct),
 	)
 }
 
