@@ -46,6 +46,8 @@ var (
 	PatternBook = regexp.MustCompile(`\r\n\r\n\r\n\r\n[A-Za-z]+([ \t]+[A-Za-z:]+)*\r\n\r\n`)
 	// PatternVerse is a verse
 	PatternVerse = regexp.MustCompile(`\d+[:]\d+[A-Za-z:.,?;"' ()\t\r\n]+`)
+	// PatternSentence is a sentence
+	PatternSentence = regexp.MustCompile(`[.!?]`)
 	// PatternWord is for splitting into words
 	PatternWord = regexp.MustCompile(`[ \t\r\n]+`)
 	// FlagVerbose enables verbose mode
@@ -100,7 +102,7 @@ func main() {
 		}
 		return
 	} else {
-		verses, words, max, maxWords := Verses()
+		verses, sentences, words, max, maxWords := Verses()
 		maxWord := 0
 		for _, word := range words {
 			if length := len(word); length > maxWord {
@@ -108,6 +110,7 @@ func main() {
 			}
 		}
 		fmt.Printf("number of verses %d\n", len(verses))
+		fmt.Printf("number of sentences %d\n", len(sentences))
 		fmt.Printf("max verse length %d\n", max)
 		fmt.Printf("max words in verse %d\n", maxWords)
 		fmt.Printf("number of unique words %d\n", len(words))
@@ -125,7 +128,7 @@ func main() {
 
 // WordsInference test words seq2seq
 func WordsInference() {
-	_, words, _, _ := Verses()
+	_, _, words, _, _ := Verses()
 	fmt.Println(len(words))
 
 	set := tf32.NewSet()
@@ -307,7 +310,7 @@ func Inference() {
 
 // HierarchicalLearn learns the ierarchical encoder decoder rnn model for words
 func HierarchicalLearn() {
-	_, words, _, _ := Verses()
+	_, _, words, _, _ := Verses()
 	fmt.Println(len(words))
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
@@ -462,7 +465,7 @@ func HierarchicalLearn() {
 
 // VariableLearn learns the rnn model
 func VariableLearn() {
-	verses, _, _, _ := Verses()
+	verses, _, _, _, _ := Verses()
 
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
@@ -608,7 +611,7 @@ func VariableLearn() {
 
 // FixedLearn learns the rnn model
 func FixedLearn() {
-	verses, _, _, _ := Verses()
+	verses, _, _, _, _ := Verses()
 	max := Scale * 8
 
 	symbols := make([][]tf32.V, Nets)
@@ -792,9 +795,9 @@ func FixedLearn() {
 }
 
 // Verses gets the bible verses
-func Verses() ([]string, []string, int, int) {
-	testaments, verses, words, max :=
-		Bible(), make([]string, 0, NumberOfVerses), make([]string, 0, 8), 0
+func Verses() ([]string, []string, []string, int, int) {
+	testaments, verses, sentences, words, max :=
+		Bible(), make([]string, 0, NumberOfVerses), make([]string, 0, 8), make([]string, 0, 8), 0
 	for _, testament := range testaments {
 		if *FlagVerbose {
 			fmt.Printf("%s\n\n", testament.Name)
@@ -825,6 +828,14 @@ func Verses() ([]string, []string, int, int) {
 	}
 	seen, maxWords := make(map[string]bool), 0
 	for _, verse := range verses {
+		verseSentences := PatternSentence.Split(verse, -1)
+		for _, sentence := range verseSentences {
+			sentence = strings.TrimSpace(sentence)
+			if len(sentence) == 0 {
+				continue
+			}
+			sentences = append(sentences, sentence)
+		}
 		verseWords := PatternWord.Split(verse, -1)
 		if length := len(verseWords); length > maxWords {
 			maxWords = length
@@ -838,7 +849,7 @@ func Verses() ([]string, []string, int, int) {
 			words = append(words, word)
 		}
 	}
-	return verses, words, max, maxWords
+	return verses, sentences, words, max, maxWords
 }
 
 // Bible returns the bible
