@@ -54,6 +54,8 @@ var (
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
 	// FlagLearn learn the model
 	FlagLearn = flag.String("learn", "", "learning mode")
+	// FlagWordsModel the words model
+	FlagWordsModel = flag.String("wordsModel", "", "the words model file")
 	// FlagInference load weights and generate probable strings
 	FlagInference = flag.String("inference", "", "inference mode")
 	// FlagWords test words seq2seq model
@@ -91,6 +93,8 @@ func main() {
 			VariableLearn()
 		case "hierarchical":
 			HierarchicalLearn()
+		case "hierarchical_sentence":
+			HierarchicalSentenceLearn(*FlagWordsModel)
 		}
 
 		return
@@ -118,13 +122,6 @@ func main() {
 		return
 	}
 }
-
-/*
- * weights-6-2-2020
- * 24338
- * 12308.803 99
- * 0.8142411044457227 0.39095242008381953
- */
 
 // WordsInference test words seq2seq
 func WordsInference() {
@@ -308,7 +305,7 @@ func Inference() {
 	search(0, []rune{'Y'}, &state, 0)
 }
 
-// HierarchicalLearn learns the ierarchical encoder decoder rnn model for words
+// HierarchicalLearn learns the hierarchical encoder decoder rnn model for words
 func HierarchicalLearn() {
 	_, _, words, _, _ := Verses()
 	fmt.Println(len(words))
@@ -458,6 +455,185 @@ func HierarchicalLearn() {
 	p.Add(scatter)
 
 	err = p.Save(8*vg.Inch, 8*vg.Inch, "epochs.png")
+	if err != nil {
+		panic(err)
+	}
+}
+
+// HierarchicalSentenceLearn learns the hierarchical encoder decoder rnn model
+// for sentences
+func HierarchicalSentenceLearn(wordsModel string) {
+	_, sentences, _, _, _ := Verses()
+	fmt.Println(len(sentences))
+
+	setL1 := tf32.NewSet()
+	cost, epoch, err := setL1.Open(wordsModel)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(cost, epoch)
+
+	initial := tf32.NewV(2*Space, 1)
+	initial.X = initial.X[:cap(initial.X)]
+	set := tf32.NewSet()
+	set.Add("aw1", 2*Width, Scale*2*Width)
+	set.Add("ab1", Scale*2*Width)
+	set.Add("aw2", Scale*4*Width, Space)
+	set.Add("ab2", Space)
+	set.Add("bw1", 2*Space, Scale*2*Width)
+	set.Add("bb1", Scale*2*Width)
+	set.Add("bw2", Scale*4*Width, Width)
+	set.Add("bb2", Width)
+	for i := range set.Weights {
+		w := set.Weights[i]
+		factor := float32(math.Sqrt(float64(w.S[0])))
+		for i := 0; i < cap(w.X); i++ {
+			w.X = append(w.X, Random32(-1, 1)/factor)
+		}
+	}
+
+	deltas := make([][]float32, 0, len(set.Weights))
+	for _, p := range set.Weights {
+		deltas = append(deltas, make([]float32, len(p.X)))
+	}
+
+	symbol := tf32.NewV(2, 1)
+	symbol.X = append(symbol.X, 0, 2*Symbols)
+	space := tf32.NewV(2, 1)
+	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
+
+	done := make(chan float32, 8)
+	learn := func(set *tf32.Set, sentence string) {
+		words := PatternWord.Split(sentence, -1)
+		symbols := make([]tf32.V, 0, len(words))
+		for _, word := range words {
+			word = strings.TrimSpace(word)
+			symbol := tf32.NewV(2*Symbols, 1)
+			symbol.X = symbol.X[:cap(symbol.X)]
+			state := tf32.NewV(2*Space, 1)
+			state.X = state.X[:cap(state.X)]
+			l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbol.Meta(), state.Meta())), set.Get("ab1")))
+			l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+			for _, s := range []rune(word) {
+				for i := range symbol.X {
+					symbol.X[i] = 0
+				}
+				index := 2 * int(s)
+				symbol.X[index] = 0
+				symbol.X[index+1] = 1
+				l2(func(a *tf32.V) bool {
+					copy(state.X, a.X)
+					return true
+				})
+			}
+
+			symbols = append(symbols, state)
+		}
+
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("ab1")))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+		for j := 1; j < len(symbols); j++ {
+			l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[j].Meta(), l2)), set.Get("ab1")))
+			l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+		}
+
+		l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw1"), l2), set.Get("bb1")))
+		l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
+		cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0].Meta()))
+		for j := 1; j < len(symbols); j++ {
+			l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw1"), tf32.Slice(l2, space.Meta())), set.Get("bb1")))
+			l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
+			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j].Meta())))
+		}
+
+		done <- tf32.Gradient(cost).X[0]
+	}
+
+	iterations := 100
+	alpha, eta := float32(.3), float32(.3/float64(Nets))
+	points := make(plotter.XYs, 0, iterations)
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		for i := range sentences {
+			j := i + rand.Intn(len(sentences)-i)
+			sentences[i], sentences[j] = sentences[j], sentences[i]
+		}
+
+		total := float32(0.0)
+		for j := 0; j < len(sentences); j += Nets {
+			flight, copies := 0, make([]*tf32.Set, 0, Nets)
+			for k := 0; k < Nets && j+k < len(sentences); k++ {
+				sentence := sentences[j+k]
+				cp := set.Copy()
+				copies = append(copies, &cp)
+				go learn(&cp, sentence)
+				flight++
+			}
+			for j := 0; j < flight; j++ {
+				total += <-done
+			}
+
+			for _, set := range copies {
+				norm := float32(0)
+				for _, p := range set.Weights {
+					for _, d := range p.D {
+						norm += d * d
+					}
+				}
+				norm = float32(math.Sqrt(float64(norm)))
+				if norm > 1 {
+					scaling := 1 / norm
+					for k, p := range set.Weights {
+						for l, d := range p.D {
+							deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
+							p.X[l] += deltas[k][l]
+						}
+					}
+				} else {
+					for k, p := range set.Weights {
+						for l, d := range p.D {
+							deltas[k][l] = alpha*deltas[k][l] - eta*d
+							p.X[l] += deltas[k][l]
+						}
+					}
+				}
+			}
+			fmt.Printf(".")
+		}
+		fmt.Printf("\n")
+
+		err := set.Save(fmt.Sprintf("weights_sentence_%d.w", i), total, i)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(i, total/float32(NumberOfVerses), time.Now().Sub(start))
+		start = time.Now()
+		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
+		if total < .001 {
+			fmt.Println("stopping...")
+			break
+		}
+	}
+
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "epochs vs cost"
+	p.X.Label.Text = "epochs"
+	p.Y.Label.Text = "cost"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "epochs_sentence.png")
 	if err != nil {
 		panic(err)
 	}
