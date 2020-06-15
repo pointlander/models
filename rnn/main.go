@@ -370,7 +370,7 @@ func HierarchicalLearn() {
 		done <- tf32.Gradient(cost).X[0]
 	}
 
-	iterations := 100
+	iterations := 200
 	alpha, eta := float32(.3), float32(.3/float64(Nets))
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
@@ -549,7 +549,7 @@ func HierarchicalSentenceLearn(wordsModel string) {
 		done <- tf32.Gradient(cost).X[0]
 	}
 
-	iterations := 100
+	iterations := 200
 	alpha, eta := float32(.3), float32(.3/float64(Nets))
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
