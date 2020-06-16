@@ -45,11 +45,13 @@ var (
 	// PatternBook marks the start of a book
 	PatternBook = regexp.MustCompile(`\r\n\r\n\r\n\r\n[A-Za-z]+([ \t]+[A-Za-z:]+)*\r\n\r\n`)
 	// PatternVerse is a verse
-	PatternVerse = regexp.MustCompile(`\d+[:]\d+[A-Za-z:.,?;"' ()\t\r\n]+`)
+	PatternVerse = regexp.MustCompile(`\d+[:]\d+[A-Za-z:.,?!;"' ()\t\r\n]+`)
 	// PatternSentence is a sentence
-	PatternSentence = regexp.MustCompile(`[.,?;]`)
+	PatternSentence = regexp.MustCompile(`[.,?!;]`)
 	// PatternWord is for splitting into words
 	PatternWord = regexp.MustCompile(`[ \t\r\n]+`)
+	// WordCutSet is the trim cut set for a word
+	WordCutSet = ".,?!;\"' ()\t\r\n"
 	// FlagVerbose enables verbose mode
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
 	// FlagLearn learn the model
@@ -537,7 +539,7 @@ func HierarchicalSentenceLearn(wordsModel string) {
 		words := PatternWord.Split(sentence, -1)
 		symbols := make([]tf32.V, 0, len(words))
 		for _, word := range words {
-			word = strings.Trim(word, "\"' ()\t\r\n")
+			word = strings.Trim(word, WordCutSet)
 			if word == "" {
 				continue
 			}
@@ -1039,7 +1041,7 @@ func Verses() ([]string, []string, []string, int, int) {
 			maxWords = length
 		}
 		for _, word := range verseWords {
-			word = strings.Trim(word, ".?!")
+			word = strings.Trim(word, WordCutSet)
 			if seen[word] || len(word) == 0 {
 				continue
 			}
