@@ -47,7 +47,7 @@ var (
 	// PatternVerse is a verse
 	PatternVerse = regexp.MustCompile(`\d+[:]\d+[A-Za-z:.,?;"' ()\t\r\n]+`)
 	// PatternSentence is a sentence
-	PatternSentence = regexp.MustCompile(`[.!?]`)
+	PatternSentence = regexp.MustCompile(`[.,?;]`)
 	// PatternWord is for splitting into words
 	PatternWord = regexp.MustCompile(`[ \t\r\n]+`)
 	// FlagVerbose enables verbose mode
@@ -537,7 +537,10 @@ func HierarchicalSentenceLearn(wordsModel string) {
 		words := PatternWord.Split(sentence, -1)
 		symbols := make([]tf32.V, 0, len(words))
 		for _, word := range words {
-			word = strings.TrimSpace(word)
+			word = strings.Trim(word, "\"' ()\t\r\n")
+			if word == "" {
+				continue
+			}
 			state := tf32.NewV(2*Space, 1)
 			state.X = state.X[:cap(state.X)]
 			if encoding, ok := encoded[word]; ok {
