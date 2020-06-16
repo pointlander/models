@@ -463,8 +463,9 @@ func HierarchicalLearn() {
 // HierarchicalSentenceLearn learns the hierarchical encoder decoder rnn model
 // for sentences
 func HierarchicalSentenceLearn(wordsModel string) {
-	_, sentences, _, _, _ := Verses()
-	fmt.Println(len(sentences))
+	_, sentences, words, _, _ := Verses()
+	fmt.Println("words", len(words))
+	fmt.Println("sentences", len(sentences))
 
 	setL1 := tf32.NewSet()
 	cost, epoch, err := setL1.Open(wordsModel)
@@ -472,6 +473,35 @@ func HierarchicalSentenceLearn(wordsModel string) {
 		panic(err)
 	}
 	fmt.Println(cost, epoch)
+
+	encode := func(word string) *tf32.V {
+		symbol := tf32.NewV(2*Symbols, 1)
+		symbol.X = symbol.X[:cap(symbol.X)]
+		state := tf32.NewV(2*Space, 1)
+		state.X = state.X[:cap(state.X)]
+
+		l1 := tf32.Everett(tf32.Add(tf32.Mul(setL1.Get("aw1"), tf32.Concat(symbol.Meta(), state.Meta())), setL1.Get("ab1")))
+		l2 := tf32.Everett(tf32.Add(tf32.Mul(setL1.Get("aw2"), l1), setL1.Get("ab2")))
+		for _, s := range word {
+			for i := range symbol.X {
+				symbol.X[i] = 0
+			}
+			index := 2 * int(s)
+			symbol.X[index] = 0
+			symbol.X[index+1] = 1
+			l2(func(a *tf32.V) bool {
+				copy(state.X, a.X)
+				return true
+			})
+		}
+
+		return &state
+	}
+
+	encoded := make(map[string]*tf32.V, len(words))
+	for _, word := range words {
+		encoded[word] = encode(word)
+	}
 
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
@@ -508,25 +538,13 @@ func HierarchicalSentenceLearn(wordsModel string) {
 		symbols := make([]tf32.V, 0, len(words))
 		for _, word := range words {
 			word = strings.TrimSpace(word)
-			symbol := tf32.NewV(2*Symbols, 1)
-			symbol.X = symbol.X[:cap(symbol.X)]
 			state := tf32.NewV(2*Space, 1)
 			state.X = state.X[:cap(state.X)]
-			l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbol.Meta(), state.Meta())), set.Get("ab1")))
-			l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
-			for _, s := range []rune(word) {
-				for i := range symbol.X {
-					symbol.X[i] = 0
-				}
-				index := 2 * int(s)
-				symbol.X[index] = 0
-				symbol.X[index+1] = 1
-				l2(func(a *tf32.V) bool {
-					copy(state.X, a.X)
-					return true
-				})
+			if encoding, ok := encoded[word]; ok {
+				copy(state.X, encoding.X)
+			} else {
+				fmt.Println("not found", word)
 			}
-
 			symbols = append(symbols, state)
 		}
 
@@ -550,6 +568,7 @@ func HierarchicalSentenceLearn(wordsModel string) {
 	}
 
 	iterations := 200
+	fmt.Println("learning...")
 	alpha, eta := float32(.3), float32(.3/float64(Nets))
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
