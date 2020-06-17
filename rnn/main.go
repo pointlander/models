@@ -1030,7 +1030,7 @@ func Verses() ([]string, []string, []string, int, int) {
 	for _, verse := range verses {
 		verseSentences := PatternSentence.Split(verse, -1)
 		for _, sentence := range verseSentences {
-			sentence = strings.TrimSpace(sentence)
+			sentence = strings.Trim(sentence, WordCutSet)
 			if len(sentence) == 0 {
 				continue
 			}
