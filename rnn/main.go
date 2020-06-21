@@ -10,6 +10,8 @@ import (
 	"io/ioutil"
 	"math"
 	"math/rand"
+	"os"
+	"path"
 	"regexp"
 	"runtime"
 	"strings"
@@ -56,6 +58,8 @@ var (
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
 	// FlagLearn learn the model
 	FlagLearn = flag.String("learn", "", "learning mode")
+	// FlagGraph graphs the model files
+	FlagGraph = flag.String("graph", "", "graph mode")
 	// FlagWordsModel the words model
 	FlagWordsModel = flag.String("wordsModel", "", "the words model file")
 	// FlagInference load weights and generate probable strings
@@ -107,21 +111,82 @@ func main() {
 			Inference()
 		}
 		return
-	} else {
-		verses, sentences, words, max, maxWords := Verses()
-		maxWord := 0
-		for _, word := range words {
-			if length := len(word); length > maxWord {
-				maxWord = length
-			}
-		}
-		fmt.Printf("number of verses %d\n", len(verses))
-		fmt.Printf("number of sentences %d\n", len(sentences))
-		fmt.Printf("max verse length %d\n", max)
-		fmt.Printf("max words in verse %d\n", maxWords)
-		fmt.Printf("number of unique words %d\n", len(words))
-		fmt.Printf("max word length %d\n", maxWord)
+	} else if *FlagGraph != "" {
+		Graph(*FlagGraph)
 		return
+	}
+
+	verses, sentences, words, max, maxWords := Verses()
+	maxWord := 0
+	for _, word := range words {
+		if length := len(word); length > maxWord {
+			maxWord = length
+		}
+	}
+	fmt.Printf("number of verses %d\n", len(verses))
+	fmt.Printf("number of sentences %d\n", len(sentences))
+	fmt.Printf("max verse length %d\n", max)
+	fmt.Printf("max words in verse %d\n", maxWords)
+	fmt.Printf("number of unique words %d\n", len(words))
+	fmt.Printf("max word length %d\n", maxWord)
+	return
+}
+
+// Graph graphs the weight files
+func Graph(directory string) {
+	input, err := os.Open(directory)
+	if err != nil {
+		panic(err)
+	}
+	defer input.Close()
+	type Pair struct {
+		Epoch int
+		Cost  float32
+	}
+	pairs := make(map[int]*Pair)
+	names, err := input.Readdirnames(-1)
+	if err != nil {
+		panic(err)
+	}
+	for _, name := range names {
+		if strings.HasSuffix(name, ".w") {
+			set := tf32.NewSet()
+			cost, epoch, err := set.Open(path.Join(directory, name))
+			if err != nil {
+				panic(err)
+			}
+			pair := Pair{
+				Epoch: epoch,
+				Cost:  cost,
+			}
+			pairs[epoch] = &pair
+		}
+	}
+
+	points := make(plotter.XYs, 0, len(pairs))
+	for _, pair := range pairs {
+		points = append(points, plotter.XY{X: float64(pair.Epoch), Y: float64(pair.Cost)})
+	}
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "epochs vs cost"
+	p.X.Label.Text = "epochs"
+	p.Y.Label.Text = "cost"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "epochs.png")
+	if err != nil {
+		panic(err)
 	}
 }
 
