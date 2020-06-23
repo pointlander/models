@@ -1,0 +1,14 @@
+syntax = "proto3";
+package main;
+
+option go_package = ".;main";
+
+message Entry {
+  uint32 size = 1;
+  bytes data = 2;
+}
+
+message Vector {
+  uint64 verse = 1;
+  repeated float vector = 2;
+}
