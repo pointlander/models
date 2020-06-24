@@ -25,74 +25,19 @@ const (
 // of the legacy proto package is being used.
 const _ = proto.ProtoPackageIsVersion4
 
-type Entry struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Size uint32 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
-	Data []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-}
-
-func (x *Entry) Reset() {
-	*x = Entry{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_rnn_proto_msgTypes[0]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *Entry) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Entry) ProtoMessage() {}
-
-func (x *Entry) ProtoReflect() protoreflect.Message {
-	mi := &file_rnn_proto_msgTypes[0]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Entry.ProtoReflect.Descriptor instead.
-func (*Entry) Descriptor() ([]byte, []int) {
-	return file_rnn_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Entry) GetSize() uint32 {
-	if x != nil {
-		return x.Size
-	}
-	return 0
-}
-
-func (x *Entry) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
 type Vector struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Verse  uint64    `protobuf:"varint,1,opt,name=verse,proto3" json:"verse,omitempty"`
-	Vector []float32 `protobuf:"fixed32,2,rep,packed,name=vector,proto3" json:"vector,omitempty"`
+	Verse  uint64   `protobuf:"varint,1,opt,name=verse,proto3" json:"verse,omitempty"`
+	Vector []uint32 `protobuf:"varint,2,rep,packed,name=vector,proto3" json:"vector,omitempty"`
 }
 
 func (x *Vector) Reset() {
 	*x = Vector{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_rnn_proto_msgTypes[1]
+		mi := &file_rnn_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -105,7 +50,7 @@ func (x *Vector) String() string {
 func (*Vector) ProtoMessage() {}
 
 func (x *Vector) ProtoReflect() protoreflect.Message {
-	mi := &file_rnn_proto_msgTypes[1]
+	mi := &file_rnn_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -118,7 +63,7 @@ func (x *Vector) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vector.ProtoReflect.Descriptor instead.
 func (*Vector) Descriptor() ([]byte, []int) {
-	return file_rnn_proto_rawDescGZIP(), []int{1}
+	return file_rnn_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Vector) GetVerse() uint64 {
@@ -128,7 +73,7 @@ func (x *Vector) GetVerse() uint64 {
 	return 0
 }
 
-func (x *Vector) GetVector() []float32 {
+func (x *Vector) GetVector() []uint32 {
 	if x != nil {
 		return x.Vector
 	}
@@ -139,14 +84,11 @@ var File_rnn_proto protoreflect.FileDescriptor
 
 var file_rnn_proto_rawDesc = []byte{
 	0x0a, 0x09, 0x72, 0x6e, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x04, 0x6d, 0x61, 0x69,
-	0x6e, 0x22, 0x2f, 0x0a, 0x05, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x12, 0x0a, 0x04, 0x73, 0x69,
-	0x7a, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x12, 0x12,
-	0x0a, 0x04, 0x64, 0x61, 0x74, 0x61, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x04, 0x64, 0x61,
-	0x74, 0x61, 0x22, 0x36, 0x0a, 0x06, 0x56, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x12, 0x14, 0x0a, 0x05,
-	0x76, 0x65, 0x72, 0x73, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x76, 0x65, 0x72,
-	0x73, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x18, 0x02, 0x20, 0x03,
-	0x28, 0x02, 0x52, 0x06, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x42, 0x08, 0x5a, 0x06, 0x2e, 0x3b,
-	0x6d, 0x61, 0x69, 0x6e, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6e, 0x22, 0x36, 0x0a, 0x06, 0x56, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x12, 0x14, 0x0a, 0x05, 0x76,
+	0x65, 0x72, 0x73, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x76, 0x65, 0x72, 0x73,
+	0x65, 0x12, 0x16, 0x0a, 0x06, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x18, 0x02, 0x20, 0x03, 0x28,
+	0x0d, 0x52, 0x06, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x42, 0x08, 0x5a, 0x06, 0x2e, 0x3b, 0x6d,
+	0x61, 0x69, 0x6e, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -161,10 +103,9 @@ func file_rnn_proto_rawDescGZIP() []byte {
 	return file_rnn_proto_rawDescData
 }
 
-var file_rnn_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_rnn_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_rnn_proto_goTypes = []interface{}{
-	(*Entry)(nil),  // 0: main.Entry
-	(*Vector)(nil), // 1: main.Vector
+	(*Vector)(nil), // 0: main.Vector
 }
 var file_rnn_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -181,18 +122,6 @@ func file_rnn_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_rnn_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Entry); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_rnn_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Vector); i {
 			case 0:
 				return &v.state
@@ -211,7 +140,7 @@ func file_rnn_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_rnn_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

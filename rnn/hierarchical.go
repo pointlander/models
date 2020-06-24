@@ -5,7 +5,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -21,47 +20,8 @@ import (
 	"gonum.org/v1/plot/vg"
 	"gonum.org/v1/plot/vg/draw"
 
-	"github.com/pointlander/compress"
 	"github.com/pointlander/gradient/tf32"
 )
-
-// Compress compresses some data
-func Compress(input proto.Message) ([]byte, error) {
-	in, err := proto.Marshal(input)
-	if err != nil {
-		return nil, err
-	}
-
-	size, data, channel := uint32(len(in)), bytes.Buffer{}, make(chan []byte, 1)
-	channel <- in
-	close(channel)
-	compress.BijectiveBurrowsWheelerCoder(channel).MoveToFrontCoder().
-		FilteredAdaptiveBitCoder().Code(&data)
-
-	compressed := Entry{
-		Size: size,
-		Data: data.Bytes(),
-	}
-	return proto.Marshal(&compressed)
-}
-
-// Decompress decompresses some data
-func Decompress(output proto.Message, input []byte) error {
-	compressed := Entry{}
-	err := proto.Unmarshal(input, &compressed)
-	if err != nil {
-		return err
-	}
-
-	buffer := make([]byte, int(compressed.Size))
-	channel := make(chan []byte, 1)
-	channel <- buffer
-	close(channel)
-	compress.BijectiveBurrowsWheelerDecoder(channel).MoveToFrontDecoder().
-		FilteredAdaptiveBitDecoder().Decode(bytes.NewReader(compressed.Data))
-
-	return proto.Unmarshal(buffer, output)
-}
 
 // Dot32 computes the 32 bit dot product
 func Dot32(X, Y []float32) float32 {
@@ -172,23 +132,24 @@ func Search(wordsModel, phrasesModel, query string) {
 	}
 	encoded := encode2(symbols)
 
-	min, verse := float32(1), uint64(0)
+	max, verse := float32(0), uint64(0)
 	err = db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("companies"))
+		bucket := tx.Bucket([]byte("vectors"))
 		cursor := bucket.Cursor()
 		key, value := cursor.First()
 		for key != nil && value != nil {
 			vector := Vector{}
-			err := Decompress(&vector, value)
+			err := proto.Unmarshal(value, &vector)
 			if err != nil {
 				return err
 			}
-			similarity := Similarity(encoded.X, vector.Vector)
-			if similarity < 0 {
-				similarity = -similarity
+			values := make([]float32, len(vector.Vector))
+			for i, value := range vector.Vector {
+				values[i] = math.Float32frombits(value << 16)
 			}
-			if similarity < min {
-				min, verse = similarity, vector.Verse
+			similarity := Similarity(encoded.X, values)
+			if similarity > max {
+				max, verse = similarity, vector.Verse
 			}
 			key, value = cursor.Next()
 		}
@@ -198,7 +159,7 @@ func Search(wordsModel, phrasesModel, query string) {
 		panic(err)
 	}
 
-	fmt.Println(min, verses[verse])
+	fmt.Println(max, verses[verse])
 }
 
 // BuildVectorDB builds the vector database
@@ -276,7 +237,7 @@ func BuildVectorDB(wordsModel, phrasesModel string) {
 	}
 	defer db.Close()
 	err = db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucket([]byte("companies"))
+		bucket, err := tx.CreateBucket([]byte("vectors"))
 		if err != nil {
 			return err
 		}
@@ -304,11 +265,15 @@ func BuildVectorDB(wordsModel, phrasesModel string) {
 					symbols = append(symbols, state)
 				}
 				encoded := encode2(symbols)
+				values := make([]uint32, len(encoded.X))
+				for j, value := range encoded.X {
+					values[j] = math.Float32bits(value) >> 16
+				}
 				vector := Vector{
 					Verse:  uint64(i),
-					Vector: encoded.X,
+					Vector: values,
 				}
-				value, err := Compress(&vector)
+				value, err := proto.Marshal(&vector)
 				if err != nil {
 					return err
 				}
