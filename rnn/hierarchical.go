@@ -159,7 +159,10 @@ func Search(wordsModel, phrasesModel, query string) {
 		panic(err)
 	}
 
-	fmt.Println(max, verses[verse])
+	fmt.Println(max)
+	fmt.Println(verses[verse].Testament)
+	fmt.Println(verses[verse].Book)
+	fmt.Println(verses[verse].Verse)
 }
 
 // BuildVectorDB builds the vector database
@@ -242,7 +245,7 @@ func BuildVectorDB(wordsModel, phrasesModel string) {
 			return err
 		}
 		for i, verse := range verses {
-			phrases := PatternSentence.Split(verse, -1)
+			phrases := PatternSentence.Split(verse.Verse, -1)
 			for _, phrase := range phrases {
 				phrase = strings.Trim(phrase, WordCutSet)
 				if len(phrase) == 0 {

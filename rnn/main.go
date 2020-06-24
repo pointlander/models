@@ -89,8 +89,10 @@ type Book struct {
 
 // Verse is a bible verse
 type Verse struct {
-	Number string
-	Verse  string
+	Testament string
+	Book      string
+	Number    string
+	Verse     string
 }
 
 func main() {
@@ -331,7 +333,7 @@ func VariableLearn() {
 			for k := 0; k < Nets && j+k < len(verses); k++ {
 				cp := set.Copy()
 				copies = append(copies, &cp)
-				go learn(&cp, verses[j+k])
+				go learn(&cp, verses[j+k].Verse)
 				flight++
 			}
 			for j := 0; j < flight; j++ {
@@ -482,10 +484,11 @@ func FixedLearn() {
 			}
 			for j, symbols := range symbols {
 				for k, verse := range verses[i+j*Batch : i+(j+1)*Batch] {
-					if len(verse) > max {
-						verse = verse[:max]
+					v := verse.Verse
+					if len(v) > max {
+						v = v[:max]
 					}
-					for l, symbol := range verse {
+					for l, symbol := range v {
 						index := 2 * (k*Symbols + int(symbol))
 						symbols[l].X[index] = 0
 						symbols[l].X[index+1] = 1
@@ -590,9 +593,9 @@ func FixedLearn() {
 }
 
 // Verses gets the bible verses
-func Verses() ([]string, []string, []string, int, int) {
+func Verses() ([]Verse, []string, []string, int, int) {
 	testaments, verses, sentences, words, max :=
-		Bible(), make([]string, 0, NumberOfVerses), make([]string, 0, 8), make([]string, 0, 8), 0
+		Bible(), make([]Verse, 0, NumberOfVerses), make([]string, 0, 8), make([]string, 0, 8), 0
 	for _, testament := range testaments {
 		if *FlagVerbose {
 			fmt.Printf("%s\n\n", testament.Name)
@@ -608,7 +611,7 @@ func Verses() ([]string, []string, []string, int, int) {
 				if length := len(verse.Verse); length > max {
 					max = length
 				}
-				verses = append(verses, verse.Verse)
+				verses = append(verses, verse)
 			}
 			if *FlagVerbose {
 				fmt.Printf("\n")
@@ -623,7 +626,7 @@ func Verses() ([]string, []string, []string, int, int) {
 	}
 	seen, maxWords := make(map[string]bool), 0
 	for _, verse := range verses {
-		verseSentences := PatternSentence.Split(verse, -1)
+		verseSentences := PatternSentence.Split(verse.Verse, -1)
 		for _, sentence := range verseSentences {
 			sentence = strings.Trim(sentence, WordCutSet)
 			if len(sentence) == 0 {
@@ -631,7 +634,7 @@ func Verses() ([]string, []string, []string, int, int) {
 			}
 			sentences = append(sentences, sentence)
 		}
-		verseWords := PatternWord.Split(verse, -1)
+		verseWords := PatternWord.Split(verse.Verse, -1)
 		if length := len(verseWords); length > maxWords {
 			maxWords = length
 		}
@@ -679,8 +682,10 @@ func Bible() []Testament {
 				l := strings.TrimSpace(strings.ReplaceAll(content[line[0]:line[1]], "\r\n", " "))
 				a := strings.Index(l, " ")
 				verse := Verse{
-					Number: strings.TrimSpace(l[:a]),
-					Verse:  strings.TrimSpace(l[a:]),
+					Testament: t.Name,
+					Book:      b.Name,
+					Number:    strings.TrimSpace(l[:a]),
+					Verse:     strings.TrimSpace(l[a:]),
 				}
 				b.Verses = append(b.Verses, verse)
 			}
