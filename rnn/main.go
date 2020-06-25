@@ -72,7 +72,7 @@ var (
 	// FlagBrain test words with bfloat16
 	FlagBrain = flag.Bool("brain", false, "test words with bfloat16")
 	// FlagSearch search the bible
-	FlagSearch = flag.String("search", "", "search the bible")
+	FlagSearch = flag.Bool("search", false, "search the bible")
 )
 
 // Testament is a bible testament
@@ -114,8 +114,8 @@ func main() {
 	} else if *FlagBuildDB {
 		BuildVectorDB(*FlagWordsModel, *FlagPhrasesModel)
 		return
-	} else if *FlagSearch != "" {
-		Search(*FlagWordsModel, *FlagPhrasesModel, *FlagSearch)
+	} else if *FlagSearch {
+		Search(*FlagWordsModel, *FlagPhrasesModel)
 		return
 	} else if *FlagInference != "" {
 		if *FlagWords {

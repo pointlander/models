@@ -14,6 +14,7 @@ import (
 
 	"github.com/agnivade/levenshtein"
 	"github.com/boltdb/bolt"
+	"github.com/c-bata/go-prompt"
 	"github.com/golang/protobuf/proto"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
@@ -50,7 +51,7 @@ func Similarity(a, b []float32) float32 {
 }
 
 // Search search the bible
-func Search(wordsModel, phrasesModel, query string) {
+func Search(wordsModel, phrasesModel string) {
 	verses, _, _, _, _ := Verses()
 	fmt.Println("verses", len(verses))
 
@@ -120,49 +121,78 @@ func Search(wordsModel, phrasesModel, query string) {
 		return &state
 	}
 
-	words := PatternWord.Split(query, -1)
-	symbols := make([]tf32.V, 0, len(words))
-	for _, word := range words {
-		word = strings.Trim(word, WordCutSet)
-		if word == "" {
-			continue
+	completer := func(document prompt.Document) []prompt.Suggest {
+		suggest := []prompt.Suggest{
+			{Text: "exit", Description: "Exit the system"},
 		}
-		encoding := encode1(word)
-		symbols = append(symbols, *encoding)
-	}
-	encoded := encode2(symbols)
-
-	max, verse := float32(0), uint64(0)
-	err = db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("vectors"))
-		cursor := bucket.Cursor()
-		key, value := cursor.First()
-		for key != nil && value != nil {
-			vector := Vector{}
-			err := proto.Unmarshal(value, &vector)
-			if err != nil {
-				return err
-			}
-			values := make([]float32, len(vector.Vector))
-			for i, value := range vector.Vector {
-				values[i] = math.Float32frombits(value << 16)
-			}
-			similarity := Similarity(encoded.X, values)
-			if similarity > max {
-				max, verse = similarity, vector.Verse
-			}
-			key, value = cursor.Next()
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
+		return prompt.FilterHasPrefix(suggest, document.GetWordBeforeCursor(), true)
 	}
 
-	fmt.Println(max)
-	fmt.Println(verses[verse].Testament)
-	fmt.Println(verses[verse].Book)
-	fmt.Println(verses[verse].Verse)
+	type Result struct {
+		Similarity float32
+		Verse      uint64
+	}
+
+	for {
+		query := prompt.Input("> ", completer)
+		if query == "exit" {
+			break
+		}
+
+		words := PatternWord.Split(query, -1)
+		symbols := make([]tf32.V, 0, len(words))
+		for _, word := range words {
+			word = strings.Trim(word, WordCutSet)
+			if word == "" {
+				continue
+			}
+			encoding := encode1(word)
+			symbols = append(symbols, *encoding)
+		}
+		encoded := encode2(symbols)
+
+		var results [10]Result
+		for i := range results {
+			results[i].Similarity = -1
+		}
+		err = db.View(func(tx *bolt.Tx) error {
+			bucket := tx.Bucket([]byte("vectors"))
+			cursor := bucket.Cursor()
+			key, value := cursor.First()
+			for key != nil && value != nil {
+				vector := Vector{}
+				err := proto.Unmarshal(value, &vector)
+				if err != nil {
+					return err
+				}
+				values := make([]float32, len(vector.Vector))
+				for i, value := range vector.Vector {
+					values[i] = math.Float32frombits(value << 16)
+				}
+				similarity := Similarity(encoded.X, values)
+				for i := range results {
+					if similarity > results[i].Similarity {
+						if i > 0 {
+							results[i-1] = results[i]
+						}
+						results[i].Similarity = similarity
+						results[i].Verse = vector.Verse
+					}
+				}
+				key, value = cursor.Next()
+			}
+			return nil
+		})
+		if err != nil {
+			panic(err)
+		}
+		for _, result := range results {
+			fmt.Println(result.Similarity)
+			fmt.Println(verses[result.Verse].Testament)
+			fmt.Println(verses[result.Verse].Book)
+			fmt.Println(verses[result.Verse].Verse)
+		}
+	}
 }
 
 // BuildVectorDB builds the vector database
