@@ -52,7 +52,7 @@ var (
 	// PatternWord is for splitting into words
 	PatternWord = regexp.MustCompile(`[ \t\r\n]+`)
 	// WordCutSet is the trim cut set for a word
-	WordCutSet = ".,?!;\"' ()\t\r\n"
+	WordCutSet = ".,?!:;\"' ()\t\r\n"
 	// FlagVerbose enables verbose mode
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
 	// FlagLearn learn the model

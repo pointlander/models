@@ -52,7 +52,7 @@ func Similarity(a, b []float32) float32 {
 
 // Search search the bible
 func Search(wordsModel, phrasesModel string) {
-	verses, _, words, _, _ := Verses()
+	verses, _, _, _, _ := Verses()
 	fmt.Println("verses", len(verses))
 
 	options := bolt.Options{
@@ -132,6 +132,7 @@ func Search(wordsModel, phrasesModel string) {
 	type Result struct {
 		Similarity float32
 		Verse      uint64
+		Word       string
 	}
 
 	for {
@@ -161,22 +162,40 @@ func Search(wordsModel, phrasesModel string) {
 			for i := range results {
 				results[i].Similarity = -1
 			}
-			for i, word := range words {
-				vector := encode(word)
-				similarity := Similarity(encoded, vector)
-				for j := range results {
-					if similarity > results[j].Similarity {
-						if j > 0 {
-							results[j-1] = results[j]
-						}
-						results[j].Similarity = similarity
-						results[j].Verse = uint64(i)
+			err = db.View(func(tx *bolt.Tx) error {
+				bucket := tx.Bucket([]byte("words"))
+				cursor := bucket.Cursor()
+				key, value := cursor.First()
+				for key != nil && value != nil {
+					vector := Vector{}
+					err := proto.Unmarshal(value, &vector)
+					if err != nil {
+						return err
 					}
+					values := make([]float32, len(vector.Vector))
+					for i, value := range vector.Vector {
+						values[i] = math.Float32frombits(value << 16)
+					}
+					similarity := Similarity(encoded, values)
+					for j := range results {
+						if similarity > results[j].Similarity {
+							if j > 0 {
+								results[j-1] = results[j]
+							}
+							results[j].Similarity = similarity
+							results[j].Word = string(key)
+						}
+					}
+					key, value = cursor.Next()
 				}
+				return nil
+			})
+			if err != nil {
+				panic(err)
 			}
 			for _, result := range results {
 				fmt.Println(result.Similarity)
-				fmt.Println(words[result.Verse])
+				fmt.Println(result.Word)
 			}
 		default:
 			words := PatternWord.Split(query, -1)
@@ -310,6 +329,39 @@ func BuildVectorDB(wordsModel, phrasesModel string) {
 		panic(err)
 	}
 	defer db.Close()
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucket([]byte("words"))
+		if err != nil {
+			return err
+		}
+		for word, v := range encoded {
+			vector := make([]tf32.V, 1)
+			vector[0] = *v
+			encoded := encode2(vector)
+			values := make([]uint32, len(encoded.X))
+			for j, value := range encoded.X {
+				values[j] = math.Float32bits(value) >> 16
+			}
+			message := Vector{
+				Verse:  0,
+				Vector: values,
+			}
+			value, err := proto.Marshal(&message)
+			if err != nil {
+				return err
+			}
+			err = bucket.Put([]byte(word), value)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	err = db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucket([]byte("vectors"))
 		if err != nil {
