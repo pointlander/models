@@ -52,7 +52,7 @@ func Similarity(a, b []float32) float32 {
 
 // Search search the bible
 func Search(wordsModel, phrasesModel string) {
-	verses, _, _, _, _ := Verses()
+	verses, _, words, _, _ := Verses()
 	fmt.Println("verses", len(verses))
 
 	options := bolt.Options{
@@ -124,6 +124,7 @@ func Search(wordsModel, phrasesModel string) {
 	completer := func(document prompt.Document) []prompt.Suggest {
 		suggest := []prompt.Suggest{
 			{Text: "exit", Description: "Exit the system"},
+			{Text: "syn", Description: "find synonyms"},
 		}
 		return prompt.FilterHasPrefix(suggest, document.GetWordBeforeCursor(), true)
 	}
@@ -135,62 +136,102 @@ func Search(wordsModel, phrasesModel string) {
 
 	for {
 		query := prompt.Input("> ", completer)
-		if query == "exit" {
-			break
+		parts := strings.Split(query, " ")
+		if len(parts) < 1 {
+			continue
 		}
-
-		words := PatternWord.Split(query, -1)
-		symbols := make([]tf32.V, 0, len(words))
-		for _, word := range words {
-			word = strings.Trim(word, WordCutSet)
-			if word == "" {
-				continue
+		switch parts[0] {
+		case "exit":
+			return
+		case "syn":
+			encode := func(word string) []float32 {
+				vector := encode1(word)
+				v := make([]tf32.V, 1)
+				v[0] = *vector
+				wordVector := encode2(v)
+				return wordVector.X
 			}
-			encoding := encode1(word)
-			symbols = append(symbols, *encoding)
-		}
-		encoded := encode2(symbols)
+			if len(parts) != 2 {
+				fmt.Println("word required")
+				break
+			}
+			encoded := encode(parts[1])
 
-		var results [10]Result
-		for i := range results {
-			results[i].Similarity = -1
-		}
-		err = db.View(func(tx *bolt.Tx) error {
-			bucket := tx.Bucket([]byte("vectors"))
-			cursor := bucket.Cursor()
-			key, value := cursor.First()
-			for key != nil && value != nil {
-				vector := Vector{}
-				err := proto.Unmarshal(value, &vector)
-				if err != nil {
-					return err
-				}
-				values := make([]float32, len(vector.Vector))
-				for i, value := range vector.Vector {
-					values[i] = math.Float32frombits(value << 16)
-				}
-				similarity := Similarity(encoded.X, values)
-				for i := range results {
-					if similarity > results[i].Similarity {
-						if i > 0 {
-							results[i-1] = results[i]
+			var results [10]Result
+			for i := range results {
+				results[i].Similarity = -1
+			}
+			for i, word := range words {
+				vector := encode(word)
+				similarity := Similarity(encoded, vector)
+				for j := range results {
+					if similarity > results[j].Similarity {
+						if j > 0 {
+							results[j-1] = results[j]
 						}
-						results[i].Similarity = similarity
-						results[i].Verse = vector.Verse
+						results[j].Similarity = similarity
+						results[j].Verse = uint64(i)
 					}
 				}
-				key, value = cursor.Next()
 			}
-			return nil
-		})
-		if err != nil {
-			panic(err)
-		}
-		for _, result := range results {
-			fmt.Println(result.Similarity)
-			fmt.Println(verses[result.Verse].Testament)
-			fmt.Println(verses[result.Verse].Book)
-			fmt.Println(verses[result.Verse].Verse)
+			for _, result := range results {
+				fmt.Println(result.Similarity)
+				fmt.Println(words[result.Verse])
+			}
+		default:
+			words := PatternWord.Split(query, -1)
+			symbols := make([]tf32.V, 0, len(words))
+			for _, word := range words {
+				word = strings.Trim(word, WordCutSet)
+				if word == "" {
+					continue
+				}
+				encoding := encode1(word)
+				symbols = append(symbols, *encoding)
+			}
+			encoded := encode2(symbols)
+
+			var results [10]Result
+			for i := range results {
+				results[i].Similarity = -1
+			}
+			err = db.View(func(tx *bolt.Tx) error {
+				bucket := tx.Bucket([]byte("vectors"))
+				cursor := bucket.Cursor()
+				key, value := cursor.First()
+				for key != nil && value != nil {
+					vector := Vector{}
+					err := proto.Unmarshal(value, &vector)
+					if err != nil {
+						return err
+					}
+					values := make([]float32, len(vector.Vector))
+					for i, value := range vector.Vector {
+						values[i] = math.Float32frombits(value << 16)
+					}
+					similarity := Similarity(encoded.X, values)
+					for i := range results {
+						if similarity > results[i].Similarity {
+							if i > 0 {
+								results[i-1] = results[i]
+							}
+							results[i].Similarity = similarity
+							results[i].Verse = vector.Verse
+						}
+					}
+					key, value = cursor.Next()
+				}
+				return nil
+			})
+			if err != nil {
+				panic(err)
+			}
+			for _, result := range results {
+				fmt.Println(result.Similarity)
+				fmt.Println(verses[result.Verse].Testament)
+				fmt.Println(verses[result.Verse].Book)
+				fmt.Println(verses[result.Verse].Verse)
+			}
 		}
 	}
 }
