@@ -582,7 +582,11 @@ func HierarchicalLearn() {
 	space := tf32.NewV(2, 1)
 	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
 
-	done := make(chan float32, 8)
+	type Completion struct {
+		Cost float32
+		Set  *tf32.Set
+	}
+	done := make(chan Completion, 8)
 	learn := func(set *tf32.Set, word string) {
 		wordSymbols := []rune(word)
 		symbols := make([]tf32.V, 0, len(wordSymbols))
@@ -611,13 +615,41 @@ func HierarchicalLearn() {
 			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j].Meta())))
 		}
 
-		done <- tf32.Gradient(cost).X[0]
+		done <- Completion{
+			Cost: tf32.Gradient(cost).X[0],
+			Set:  set,
+		}
 	}
 
 	iterations := 200
 	alpha, eta := float32(.3), float32(.3/float64(Nets))
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
+	update := func(set *tf32.Set) {
+		norm := float32(0)
+		for _, p := range set.Weights {
+			for _, d := range p.D {
+				norm += d * d
+			}
+		}
+		norm = float32(math.Sqrt(float64(norm)))
+		if norm > 1 {
+			scaling := 1 / norm
+			for k, p := range set.Weights {
+				for l, d := range p.D {
+					deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
+					p.X[l] += deltas[k][l]
+				}
+			}
+		} else {
+			for k, p := range set.Weights {
+				for l, d := range p.D {
+					deltas[k][l] = alpha*deltas[k][l] - eta*d
+					p.X[l] += deltas[k][l]
+				}
+			}
+		}
+	}
 	for i := 0; i < iterations; i++ {
 		for i := range words {
 			j := i + rand.Intn(len(words)-i)
@@ -625,45 +657,32 @@ func HierarchicalLearn() {
 		}
 
 		total := float32(0.0)
-		for j := 0; j < len(words); j += Nets {
-			flight, copies := 0, make([]*tf32.Set, 0, Nets)
-			for k := 0; k < Nets && j+k < len(words); k++ {
-				word := words[j+k]
-				cp := set.Copy()
-				copies = append(copies, &cp)
-				go learn(&cp, word)
-				flight++
+		j, flight := 0, 0
+		for j < Nets && j < len(words) {
+			word := words[j]
+			cp := set.Copy()
+			go learn(&cp, word)
+			flight++
+			j++
+		}
+		for j < len(words) {
+			completion := <-done
+			flight--
+			total += completion.Cost
+			update(completion.Set)
+			word := words[j]
+			cp := set.Copy()
+			go learn(&cp, word)
+			flight++
+			j++
+			if j%Nets == 0 {
+				fmt.Printf(".")
 			}
-			for j := 0; j < flight; j++ {
-				total += <-done
-			}
-
-			for _, set := range copies {
-				norm := float32(0)
-				for _, p := range set.Weights {
-					for _, d := range p.D {
-						norm += d * d
-					}
-				}
-				norm = float32(math.Sqrt(float64(norm)))
-				if norm > 1 {
-					scaling := 1 / norm
-					for k, p := range set.Weights {
-						for l, d := range p.D {
-							deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
-							p.X[l] += deltas[k][l]
-						}
-					}
-				} else {
-					for k, p := range set.Weights {
-						for l, d := range p.D {
-							deltas[k][l] = alpha*deltas[k][l] - eta*d
-							p.X[l] += deltas[k][l]
-						}
-					}
-				}
-			}
-			fmt.Printf(".")
+		}
+		for j := 0; j < flight; j++ {
+			completion := <-done
+			total += completion.Cost
+			update(completion.Set)
 		}
 		fmt.Printf("\n")
 
