@@ -723,6 +723,180 @@ func HierarchicalLearn() {
 	}
 }
 
+// HierarchicalExperimentLearn learns the hierarchical encoder decoder rnn model for words
+func HierarchicalExperimentLearn() {
+	_, _, words, _, _ := Verses()
+	fmt.Println(len(words))
+	initial := tf32.NewV(2*Space, 1)
+	initial.X = initial.X[:cap(initial.X)]
+	set := tf32.NewSet()
+	set.Add("aw1", 2*Width, Scale*2*Width)
+	set.Add("ab1", Scale*2*Width)
+	set.Add("aw2", Scale*4*Width, Space)
+	set.Add("ab2", Space)
+	set.Add("bw1", 2*Space, Scale*2*Width)
+	set.Add("bb1", Scale*2*Width)
+	set.Add("bw2", Scale*4*Width, Width)
+	set.Add("bb2", Width)
+	for i := range set.Weights {
+		w := set.Weights[i]
+		factor := float32(math.Sqrt(float64(w.S[0])))
+		for i := 0; i < cap(w.X); i++ {
+			w.X = append(w.X, Random32(-1, 1)/factor)
+		}
+	}
+
+	deltas := make([][]float32, 0, len(set.Weights))
+	for _, p := range set.Weights {
+		deltas = append(deltas, make([]float32, len(p.X)))
+	}
+
+	symbol := tf32.NewV(2, 1)
+	symbol.X = append(symbol.X, 0, 2*Symbols)
+	space := tf32.NewV(2, 1)
+	space.X = append(space.X, 2*Symbols, 2*Symbols+2*Space)
+
+	type Completion struct {
+		Cost float32
+		Set  *tf32.Set
+	}
+	done := make(chan Completion, 8)
+	learn := func(set *tf32.Set, word string) {
+		wordSymbols := []rune(word)
+		symbols := make([]tf32.V, 0, len(wordSymbols))
+		for _, s := range wordSymbols {
+			symbol := tf32.NewV(2*Symbols, 1)
+			symbol.X = symbol.X[:cap(symbol.X)]
+			index := 2 * int(s)
+			symbol.X[index] = 0
+			symbol.X[index+1] = 1
+			symbols = append(symbols, symbol)
+		}
+
+		l1 := tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("ab1")))
+		l2 := tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+		for j := 1; j < len(symbols); j++ {
+			l1 = tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[j].Meta(), l2)), set.Get("ab1")))
+			l2 = tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+		}
+
+		l1 = tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("bw1"), l2), set.Get("bb1")))
+		l2 = tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
+		cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0].Meta()))
+		for j := 1; j < len(symbols); j++ {
+			l1 = tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("bw1"), tf32.Slice(l2, space.Meta())), set.Get("bb1")))
+			l2 = tf32.EverettReLu(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
+			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j].Meta())))
+		}
+
+		done <- Completion{
+			Cost: tf32.Gradient(cost).X[0],
+			Set:  set,
+		}
+	}
+
+	iterations := 200
+	alpha, eta := float32(.3), float32(.3/float64(Nets))
+	points := make(plotter.XYs, 0, iterations)
+	start := time.Now()
+	update := func(set *tf32.Set) {
+		norm := float32(0)
+		for _, p := range set.Weights {
+			for _, d := range p.D {
+				norm += d * d
+			}
+		}
+		norm = float32(math.Sqrt(float64(norm)))
+		if norm > 1 {
+			scaling := 1 / norm
+			for k, p := range set.Weights {
+				for l, d := range p.D {
+					deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
+					p.X[l] += deltas[k][l]
+				}
+			}
+		} else {
+			for k, p := range set.Weights {
+				for l, d := range p.D {
+					deltas[k][l] = alpha*deltas[k][l] - eta*d
+					p.X[l] += deltas[k][l]
+				}
+			}
+		}
+	}
+	for i := 0; i < iterations; i++ {
+		for i := range words {
+			j := i + rand.Intn(len(words)-i)
+			words[i], words[j] = words[j], words[i]
+		}
+
+		total := float32(0.0)
+		j, flight := 0, 0
+		for j < Nets && j < len(words) {
+			word := words[j]
+			cp := set.Copy()
+			go learn(&cp, word)
+			flight++
+			j++
+		}
+		for j < len(words) {
+			completion := <-done
+			flight--
+			total += completion.Cost
+			update(completion.Set)
+			word := words[j]
+			cp := set.Copy()
+			go learn(&cp, word)
+			flight++
+			j++
+			if j%Nets == 0 {
+				fmt.Printf(".")
+			}
+		}
+		for j := 0; j < flight; j++ {
+			completion := <-done
+			total += completion.Cost
+			update(completion.Set)
+		}
+		fmt.Printf("\n")
+
+		err := set.Save(fmt.Sprintf("weights_%d.w", i), total, i)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(i, total/float32(NumberOfVerses), time.Now().Sub(start))
+		start = time.Now()
+		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
+		if total < .001 {
+			fmt.Println("stopping...")
+			break
+		}
+	}
+
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "epochs vs cost"
+	p.X.Label.Text = "epochs"
+	p.Y.Label.Text = "cost"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "epochs.png")
+	if err != nil {
+		panic(err)
+	}
+}
+
 // HierarchicalSentenceLearn learns the hierarchical encoder decoder rnn model
 // for sentences
 func HierarchicalSentenceLearn(wordsModel string) {

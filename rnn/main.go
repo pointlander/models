@@ -106,6 +106,8 @@ func main() {
 			VariableLearn()
 		case "hierarchical":
 			HierarchicalLearn()
+		case "hierarchical_experiment":
+			HierarchicalExperimentLearn()
 		case "hierarchical_sentence":
 			HierarchicalSentenceLearn(*FlagWordsModel)
 		}
