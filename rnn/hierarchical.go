@@ -425,7 +425,7 @@ func BuildVectorDB(wordsModel, phrasesModel string) {
 }
 
 // WordsInference test words seq2seq
-func WordsInference() {
+func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
 	_, _, words, _, _ := Verses()
 	fmt.Println(len(words))
 
@@ -499,8 +499,8 @@ func WordsInference() {
 		state := tf32.NewV(2*Space, 1)
 		state.X = state.X[:cap(state.X)]
 
-		l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbol.Meta(), state.Meta())), set.Get("ab1")))
-		l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+		l1 := activation(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbol.Meta(), state.Meta())), set.Get("ab1")))
+		l2 := activation(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 		for _, s := range word {
 			for i := range symbol.X {
 				symbol.X[i] = 0
@@ -514,8 +514,8 @@ func WordsInference() {
 			})
 		}
 
-		l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw1"), state.Meta()), set.Get("bb1")))
-		l2 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
+		l1 = activation(tf32.Add(tf32.Mul(set.Get("bw1"), state.Meta()), set.Get("bb1")))
+		l2 = activation(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
 		for range word {
 			l2(func(a *tf32.V) bool {
 				symbols := a.X[:2*Symbols]

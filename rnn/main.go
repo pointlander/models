@@ -68,7 +68,7 @@ var (
 	// FlagBuildDB build the vector db
 	FlagBuildDB = flag.Bool("db", false, "build the vector db")
 	// FlagWords test words seq2seq model
-	FlagWords = flag.Bool("words", false, "test words seq2seq model")
+	FlagWords = flag.String("words", "", "test words seq2seq model")
 	// FlagBrain test words with bfloat16
 	FlagBrain = flag.Bool("brain", false, "test words with bfloat16")
 	// FlagSearch search the bible
@@ -120,8 +120,10 @@ func main() {
 		Search(*FlagWordsModel, *FlagPhrasesModel)
 		return
 	} else if *FlagInference != "" {
-		if *FlagWords {
-			WordsInference()
+		if *FlagWords == "everett" {
+			WordsInference(tf32.Everett)
+		} else if *FlagWords == "relu" {
+			WordsInference(tf32.EverettReLu)
 		} else {
 			Inference()
 		}
