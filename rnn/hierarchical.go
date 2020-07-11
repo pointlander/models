@@ -566,9 +566,15 @@ func HierarchicalLearn() {
 	set.Add("bb2", Width)
 	for i := range set.Weights {
 		w := set.Weights[i]
-		factor := float32(math.Sqrt(float64(w.S[0])))
-		for i := 0; i < cap(w.X); i++ {
-			w.X = append(w.X, Random32(-1, 1)/factor)
+		if w.S[1] == 1 {
+			for i := 0; i < cap(w.X); i++ {
+				w.X = append(w.X, 0)
+			}
+		} else {
+			factor := float32(math.Sqrt(2 / float64(w.S[0])))
+			for i := 0; i < cap(w.X); i++ {
+				w.X = append(w.X, float32(rand.NormFloat64())*factor)
+			}
 		}
 	}
 
