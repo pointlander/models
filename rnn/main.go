@@ -105,9 +105,9 @@ func main() {
 		case "variable":
 			VariableLearn()
 		case "hierarchical":
-			HierarchicalLearn()
+			HierarchicalLearn(tf32.Everett)
 		case "hierarchical_experiment":
-			HierarchicalExperimentLearn()
+			HierarchicalLearn(tf32.EverettReLu)
 		case "hierarchical_sentence":
 			HierarchicalSentenceLearn(*FlagWordsModel)
 		}
