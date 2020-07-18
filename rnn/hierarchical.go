@@ -459,6 +459,9 @@ func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
 			}
 			if float64(aw) < 1.0/(1<<15) {
 				small++
+				if *FlagSparse {
+					weights.X[i] = 0
+				}
 				if i != 0 {
 					diff := i - last
 					if diff >= len(histogram) {
@@ -621,15 +624,17 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j].Meta())))
 		}
 
-		scale := tf32.NewV(1, 1)
-		scale.X = append(scale.X, float32(Symbols*len(symbols))/
-			float32(32*2*Width*Scale*2*Width+Scale*4*Width*Space+
-				2*Space*Scale*2*Width+Scale*4*Width+Width))
-		regularization := tf32.Add(tf32.Sum(tf32.Abs(set.Get("aw1"))), tf32.Sum(tf32.Abs(set.Get("aw2"))))
-		regularization = tf32.Add(regularization, tf32.Sum(tf32.Abs(set.Get("bw1"))))
-		regularization = tf32.Add(regularization, tf32.Sum(tf32.Abs(set.Get("bw2"))))
-		regularization = tf32.Hadamard(scale.Meta(), regularization)
-		cost = tf32.Add(cost, regularization)
+		if *FlagSparse {
+			scale := tf32.NewV(1, 1)
+			scale.X = append(scale.X, float32(Symbols*len(symbols))/
+				float32(32*2*Width*Scale*2*Width+Scale*4*Width*Space+
+					2*Space*Scale*2*Width+Scale*4*Width+Width))
+			regularization := tf32.Add(tf32.Sum(tf32.Abs(set.Get("aw1"))), tf32.Sum(tf32.Abs(set.Get("aw2"))))
+			regularization = tf32.Add(regularization, tf32.Sum(tf32.Abs(set.Get("bw1"))))
+			regularization = tf32.Add(regularization, tf32.Sum(tf32.Abs(set.Get("bw2"))))
+			regularization = tf32.Hadamard(scale.Meta(), regularization)
+			cost = tf32.Add(cost, regularization)
+		}
 
 		done <- Completion{
 			Cost: tf32.Gradient(cost).X[0],
