@@ -484,6 +484,49 @@ func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
 	fmt.Println("small", float32(small)/float32(count))
 	//fmt.Println("histogram", histogram)
 
+	points := make(plotter.XYs, 0, 256)
+	weights := set.ByName["aw1"]
+	magnitudes := make([]float32, 2*weights.S[1])
+	for i := 0; i < weights.S[1]; i++ {
+		for j := 0; j < weights.S[0]; j++ {
+			w := weights.X[i*weights.S[0]+j]
+			magnitudes[i<<1] += w * w
+			magnitudes[i<<1+1] += w * w
+		}
+	}
+	for i, magnitude := range magnitudes {
+		magnitudes[i] = float32(math.Sqrt(float64(magnitude)))
+	}
+	weights = set.ByName["aw2"]
+	for i := 0; i < weights.S[1]; i++ {
+		for j := 0; j < weights.S[0]; j++ {
+			w := weights.X[i*weights.S[0]+j]
+			points = append(points, plotter.XY{X: float64(magnitudes[j]), Y: float64(w)})
+		}
+	}
+
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "weights vs weights"
+	p.X.Label.Text = "weight"
+	p.Y.Label.Text = "weight"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "weights.png")
+	if err != nil {
+		panic(err)
+	}
+
 	if *FlagBrain {
 		for _, weights := range set.Weights {
 			for i, w := range weights.X {
