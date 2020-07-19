@@ -73,6 +73,8 @@ var (
 	FlagBrain = flag.Bool("brain", false, "test words with bfloat16")
 	// FlagSearch search the bible
 	FlagSearch = flag.Bool("search", false, "search the bible")
+	// FlagSparse sparse mode
+	FlagSparse = flag.Bool("sparse", false, "sparse mode")
 )
 
 // Testament is a bible testament

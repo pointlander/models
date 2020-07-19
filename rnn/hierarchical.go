@@ -459,6 +459,9 @@ func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
 			}
 			if float64(aw) < 1.0/(1<<15) {
 				small++
+				if *FlagSparse {
+					weights.X[i] = 0
+				}
 				if i != 0 {
 					diff := i - last
 					if diff >= len(histogram) {
@@ -480,6 +483,49 @@ func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
 	fmt.Println("max", max)
 	fmt.Println("small", float32(small)/float32(count))
 	//fmt.Println("histogram", histogram)
+
+	points := make(plotter.XYs, 0, 256)
+	weights := set.ByName["aw1"]
+	magnitudes := make([]float32, 2*weights.S[1])
+	for i := 0; i < weights.S[1]; i++ {
+		for j := 0; j < weights.S[0]; j++ {
+			w := weights.X[i*weights.S[0]+j]
+			magnitudes[i<<1] += w * w
+			magnitudes[i<<1+1] += w * w
+		}
+	}
+	for i, magnitude := range magnitudes {
+		magnitudes[i] = float32(math.Sqrt(float64(magnitude)))
+	}
+	weights = set.ByName["aw2"]
+	for i := 0; i < weights.S[1]; i++ {
+		for j := 0; j < weights.S[0]; j++ {
+			w := weights.X[i*weights.S[0]+j]
+			points = append(points, plotter.XY{X: float64(magnitudes[j]), Y: float64(w)})
+		}
+	}
+
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "weights vs weights"
+	p.X.Label.Text = "weight"
+	p.Y.Label.Text = "weight"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "weights.png")
+	if err != nil {
+		panic(err)
+	}
 
 	if *FlagBrain {
 		for _, weights := range set.Weights {
@@ -619,6 +665,18 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 			l1 = activation(tf32.Add(tf32.Mul(set.Get("bw1"), tf32.Slice(l2, space.Meta())), set.Get("bb1")))
 			l2 = activation(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
 			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j].Meta())))
+		}
+
+		if *FlagSparse {
+			scale := tf32.NewV(1, 1)
+			scale.X = append(scale.X, float32(Symbols*len(symbols))/
+				float32(32*2*Width*Scale*2*Width+Scale*4*Width*Space+
+					2*Space*Scale*2*Width+Scale*4*Width+Width))
+			regularization := tf32.Add(tf32.Sum(tf32.Abs(set.Get("aw1"))), tf32.Sum(tf32.Abs(set.Get("aw2"))))
+			regularization = tf32.Add(regularization, tf32.Sum(tf32.Abs(set.Get("bw1"))))
+			regularization = tf32.Add(regularization, tf32.Sum(tf32.Abs(set.Get("bw2"))))
+			regularization = tf32.Hadamard(scale.Meta(), regularization)
+			cost = tf32.Add(cost, regularization)
 		}
 
 		done <- Completion{
