@@ -661,30 +661,34 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 			symbols = append(symbols, symbol)
 		}
 
-		contextMul := tf32.Context{
-			Seed:    seed,
-			Dropout: .5,
-		}
-		mul := tf32.B(contextMul.MulDropout)
+		weights := set.ByName["aw1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
 
-		contextAdd := tf32.Context{
-			Seed:    seed,
-			Dropout: .5,
-		}
-		add := tf32.B(contextAdd.AddDropout)
+		weights = set.ByName["ab1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
 
-		l1 := activation(add(mul(set.Get("aw1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("ab1")))
+		weights = set.ByName["bw1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
+
+		weights = set.ByName["bb1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
+
+		l1 := activation(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("ab1")))
 		l2 := activation(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 		for j := 1; j < len(symbols); j++ {
-			l1 = activation(add(mul(set.Get("aw1"), tf32.Concat(symbols[j].Meta(), l2)), set.Get("ab1")))
+			l1 = activation(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[j].Meta(), l2)), set.Get("ab1")))
 			l2 = activation(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 		}
 
-		l1 = activation(add(mul(set.Get("bw1"), l2), set.Get("bb1")))
+		l1 = activation(tf32.Add(tf32.Mul(set.Get("bw1"), l2), set.Get("bb1")))
 		l2 = activation(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
 		cost := tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[0].Meta()))
 		for j := 1; j < len(symbols); j++ {
-			l1 = activation(add(mul(set.Get("bw1"), tf32.Slice(l2, space.Meta())), set.Get("bb1")))
+			l1 = activation(tf32.Add(tf32.Mul(set.Get("bw1"), tf32.Slice(l2, space.Meta())), set.Get("bb1")))
 			l2 = activation(tf32.Add(tf32.Mul(set.Get("bw2"), l1), set.Get("bb2")))
 			cost = tf32.Add(cost, tf32.Avg(tf32.Quadratic(tf32.Slice(l2, symbol.Meta()), symbols[j].Meta())))
 		}
@@ -724,9 +728,9 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 			scaling := 1 / norm
 			for k, p := range set.Weights {
 				if p.N == "aw1" || p.N == "bw1" {
-					rng := rand.New(rand.NewSource(seed))
+					rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
 					for l := 0; l < len(p.D); l += p.S[0] {
-						if rng.Float64() > .5 {
+						if rng.Next() > dropout {
 							continue
 						}
 						for m, d := range p.D[l : l+p.S[0]] {
@@ -734,17 +738,19 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 							p.X[l+m] += deltas[k][l+m]
 						}
 					}
-				} else if p.N == "aw2" || p.N == "bw2" {
-					mask, rng := make([]bool, p.S[0]), rand.New(rand.NewSource(seed))
-					for l := 0; l < p.S[0]; l++ {
-						mask[l] = rng.Float64() > .5
-					}
-					for l, d := range p.D {
-						if mask[l%p.S[0]] {
-							continue
+				} else if p.N == "bw1" || p.N == "bb1" {
+					index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
+					for i := 0; i < p.S[1]; i++ {
+						rng := p.Seed
+						for j := 0; j < p.S[0]; j++ {
+							if rng.Next() > dropout {
+								index++
+								continue
+							}
+							deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]*scaling
+							p.X[index] += deltas[k][index]
+							index++
 						}
-						deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
-						p.X[l] += deltas[k][l]
 					}
 				} else {
 					for l, d := range p.D {
@@ -756,9 +762,9 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 		} else {
 			for k, p := range set.Weights {
 				if p.N == "aw1" || p.N == "bw1" {
-					rng := rand.New(rand.NewSource(seed))
+					rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
 					for l := 0; l < len(p.D); l += p.S[0] {
-						if rng.Float64() > .5 {
+						if rng.Next() > dropout {
 							continue
 						}
 						for m, d := range p.D[l : l+p.S[0]] {
@@ -766,17 +772,19 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 							p.X[l+m] += deltas[k][l+m]
 						}
 					}
-				} else if p.N == "aw2" || p.N == "bw2" {
-					mask, rng := make([]bool, p.S[0]), rand.New(rand.NewSource(seed))
-					for l := 0; l < p.S[0]; l++ {
-						mask[l] = rng.Float64() > .5
-					}
-					for l, d := range p.D {
-						if mask[l%p.S[0]] {
-							continue
+				} else if p.N == "bw1" || p.N == "bb1" {
+					index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
+					for i := 0; i < p.S[1]; i++ {
+						rng := p.Seed
+						for j := 0; j < p.S[0]; j++ {
+							if rng.Next() > dropout {
+								index++
+								continue
+							}
+							deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]
+							p.X[index] += deltas[k][index]
+							index++
 						}
-						deltas[k][l] = alpha*deltas[k][l] - eta*d
-						p.X[l] += deltas[k][l]
 					}
 				} else {
 					for l, d := range p.D {
