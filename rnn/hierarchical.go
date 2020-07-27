@@ -637,9 +637,10 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 	type Completion struct {
 		Cost float32
 		Set  *tf32.Set
+		Seed int64
 	}
-	done := make(chan Completion, 8)
-	learn := func(set *tf32.Set, word string) {
+	done, seed := make(chan Completion, 8), int64(0)
+	learn := func(set *tf32.Set, seed int64, word string) {
 		wordSymbols := []rune(word)
 		symbols := make([]tf32.V, 0, len(wordSymbols))
 		for _, s := range wordSymbols {
@@ -650,6 +651,22 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 			symbol.X[index+1] = 1
 			symbols = append(symbols, symbol)
 		}
+
+		weights := set.ByName["aw1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
+
+		weights = set.ByName["ab1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
+
+		weights = set.ByName["bw1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
+
+		weights = set.ByName["bb1"]
+		weights.Seed = tf32.RNG(seed)
+		weights.Drop = .5
 
 		l1 := activation(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("ab1")))
 		l2 := activation(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
@@ -682,14 +699,15 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 		done <- Completion{
 			Cost: tf32.Gradient(cost).X[0],
 			Set:  set,
+			Seed: seed,
 		}
 	}
 
-	iterations := 200
+	iterations := 300
 	alpha, eta := float32(.3), float32(.3/float64(Nets))
 	points := make(plotter.XYs, 0, iterations)
 	start := time.Now()
-	update := func(set *tf32.Set) {
+	update := func(set *tf32.Set, seed int64) {
 		norm := float32(0)
 		for _, p := range set.Weights {
 			for _, d := range p.D {
@@ -700,16 +718,70 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 		if norm > 1 {
 			scaling := 1 / norm
 			for k, p := range set.Weights {
-				for l, d := range p.D {
-					deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
-					p.X[l] += deltas[k][l]
+				if p.N == "aw1" || p.N == "bw1" {
+					rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
+					for l := 0; l < len(p.D); l += p.S[0] {
+						if rng.Next() > dropout {
+							continue
+						}
+						for m, d := range p.D[l : l+p.S[0]] {
+							deltas[k][l+m] = alpha*deltas[k][l+m] - eta*d*scaling
+							p.X[l+m] += deltas[k][l+m]
+						}
+					}
+				} else if p.N == "bw1" || p.N == "bb1" {
+					index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
+					for i := 0; i < p.S[1]; i++ {
+						rng := p.Seed
+						for j := 0; j < p.S[0]; j++ {
+							if rng.Next() > dropout {
+								index++
+								continue
+							}
+							deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]*scaling
+							p.X[index] += deltas[k][index]
+							index++
+						}
+					}
+				} else {
+					for l, d := range p.D {
+						deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
+						p.X[l] += deltas[k][l]
+					}
 				}
 			}
 		} else {
 			for k, p := range set.Weights {
-				for l, d := range p.D {
-					deltas[k][l] = alpha*deltas[k][l] - eta*d
-					p.X[l] += deltas[k][l]
+				if p.N == "aw1" || p.N == "bw1" {
+					rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
+					for l := 0; l < len(p.D); l += p.S[0] {
+						if rng.Next() > dropout {
+							continue
+						}
+						for m, d := range p.D[l : l+p.S[0]] {
+							deltas[k][l+m] = alpha*deltas[k][l+m] - eta*d
+							p.X[l+m] += deltas[k][l+m]
+						}
+					}
+				} else if p.N == "bw1" || p.N == "bb1" {
+					index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
+					for i := 0; i < p.S[1]; i++ {
+						rng := p.Seed
+						for j := 0; j < p.S[0]; j++ {
+							if rng.Next() > dropout {
+								index++
+								continue
+							}
+							deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]
+							p.X[index] += deltas[k][index]
+							index++
+						}
+					}
+				} else {
+					for l, d := range p.D {
+						deltas[k][l] = alpha*deltas[k][l] - eta*d
+						p.X[l] += deltas[k][l]
+					}
 				}
 			}
 		}
@@ -725,7 +797,8 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 		for j < Nets && j < len(words) {
 			word := words[j]
 			cp := set.Copy()
-			go learn(&cp, word)
+			seed++
+			go learn(&cp, seed, word)
 			flight++
 			j++
 		}
@@ -733,10 +806,11 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 			completion := <-done
 			flight--
 			total += completion.Cost
-			update(completion.Set)
+			update(completion.Set, completion.Seed)
 			word := words[j]
 			cp := set.Copy()
-			go learn(&cp, word)
+			seed++
+			go learn(&cp, seed, word)
 			flight++
 			j++
 			if j%Nets == 0 {
@@ -746,7 +820,7 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 		for j := 0; j < flight; j++ {
 			completion := <-done
 			total += completion.Cost
-			update(completion.Set)
+			update(completion.Set, completion.Seed)
 		}
 		fmt.Printf("\n")
 
