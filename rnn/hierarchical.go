@@ -505,15 +505,6 @@ func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
 		}
 	}
 
-	weights = set.ByName["aw2"]
-	for i, w := range weights.X {
-		weights.X[i] = .5 * w
-	}
-	weights = set.ByName["bw2"]
-	for i, w := range weights.X {
-		weights.X[i] = .5 * w
-	}
-
 	p, err := plot.New()
 	if err != nil {
 		panic(err)
