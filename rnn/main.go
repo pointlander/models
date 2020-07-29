@@ -37,7 +37,7 @@ const (
 	// Batch is the batch size
 	Batch = 256
 	// Scale scales the neural network
-	Scale = 2
+	Scale = 4
 )
 
 var (
@@ -75,6 +75,8 @@ var (
 	FlagSearch = flag.Bool("search", false, "search the bible")
 	// FlagSparse sparse mode
 	FlagSparse = flag.Bool("sparse", false, "sparse mode")
+	// FlagDropout dropout mode
+	FlagDropout = flag.Bool("dropout", false, "dropout mode")
 )
 
 // Testament is a bible testament
