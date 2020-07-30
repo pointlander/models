@@ -37,7 +37,7 @@ const (
 	// Batch is the batch size
 	Batch = 256
 	// Scale scales the neural network
-	Scale = 4
+	Scale = 2
 )
 
 var (
