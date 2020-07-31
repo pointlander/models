@@ -5,11 +5,17 @@ import (
 	"math"
 	"math/rand"
 
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
+	"gonum.org/v1/plot/vg/draw"
+
 	"github.com/pointlander/datum/mnist"
 	"github.com/pointlander/gradient/tf32"
 )
 
 const (
+	// Width is the width of the neural network
 	Width = mnist.Width * mnist.Height
 )
 
@@ -60,8 +66,11 @@ func main() {
 	l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), image.Meta()), set.Get("ab1")))
 	l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 	cost := tf32.Quadratic(label.Meta(), l2)
+
+	iterations := 10
 	alpha, eta := float32(.3), float32(.5)
-	for i := 0; i < 100; i++ {
+	points := make(plotter.XYs, 0, iterations)
+	for i := 0; i < iterations; i++ {
 		for i := range indexes {
 			j := i + rand.Intn(len(indexes)-i)
 			indexes[i], indexes[j] = indexes[j], indexes[i]
@@ -70,11 +79,11 @@ func main() {
 		total := float32(0.0)
 		for i, index := range indexes {
 			weights := set.ByName["aw1"]
-			weights.Seed = tf32.RNG(i)
+			weights.Seed = tf32.RNG(i + 1)
 			weights.Drop = .5
 
 			weights = set.ByName["ab1"]
-			weights.Seed = tf32.RNG(i)
+			weights.Seed = tf32.RNG(i + 1)
 			weights.Drop = .5
 
 			set.Zero()
@@ -120,6 +129,36 @@ func main() {
 				fmt.Println(i, total)
 			}
 		}
+
+		err := set.Save(fmt.Sprintf("weights_%d.w", i), total, i)
+		if err != nil {
+			panic(err)
+		}
+
+		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
 		fmt.Println(total)
+
+	}
+
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "epochs vs cost"
+	p.X.Label.Text = "epochs"
+	p.Y.Label.Text = "cost"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "epochs.png")
+	if err != nil {
+		panic(err)
 	}
 }
