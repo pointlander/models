@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math"
 	"math/rand"
@@ -20,14 +21,54 @@ const (
 	Width = mnist.Width * mnist.Height
 )
 
+// FlagTest test a model
+var FlagTest = flag.String("test", "", "test a model")
+
 func main() {
 	rand.Seed(1)
+
+	flag.Parse()
 
 	datum, err := mnist.Load()
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("images", len(datum.Train.Images))
+
+	if *FlagTest != "" {
+		set := tf32.NewSet()
+		cost, epoch, err := set.Open(*FlagTest)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(cost, epoch)
+
+		correct := 0
+		for i, testImage := range datum.Test.Images {
+			image := tf32.NewV(Width, 1)
+			image.X = image.X[:cap(image.X)]
+
+			for j, value := range testImage {
+				image.X[j] = float32(value) / 255
+			}
+			l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), image.Meta()), set.Get("ab1")))
+			l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
+			max, number := float32(0.0), 0
+			l2(func(a *tf32.V) bool {
+				for j, value := range a.X {
+					if value > max {
+						max, number = value, j
+					}
+				}
+				return true
+			})
+			if (number-1)/2 == int(datum.Test.Labels[i]) {
+				correct++
+			}
+		}
+		fmt.Println(float64(correct) / float64(len(datum.Test.Images)))
+		return
+	}
 
 	set := tf32.NewSet()
 	set.Add("aw1", Width, 2*Width)
@@ -68,7 +109,7 @@ func main() {
 	l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 	cost := tf32.Avg(tf32.Quadratic(label.Meta(), l2))
 
-	iterations := 10
+	iterations := 20
 	alpha, eta := float32(.3), float32(.3)
 	points := make(plotter.XYs, 0, iterations)
 	for i := 0; i < iterations; i++ {
