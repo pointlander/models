@@ -715,77 +715,43 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 			}
 		}
 		norm = float32(math.Sqrt(float64(norm)))
+		scaling := float32(1)
 		if norm > 1 {
-			scaling := 1 / norm
-			for k, p := range set.Weights {
-				if p.Seed != 0 {
-					if p.N == "aw1" || p.N == "bw1" {
-						rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
-						for l := 0; l < len(p.D); l += p.S[0] {
-							if rng.Next() > dropout {
-								continue
-							}
-							for m, d := range p.D[l : l+p.S[0]] {
-								deltas[k][l+m] = alpha*deltas[k][l+m] - eta*d*scaling
-								p.X[l+m] += deltas[k][l+m]
-							}
+			scaling = 1 / norm
+		}
+
+		for k, p := range set.Weights {
+			if p.Seed != 0 {
+				if p.N == "aw1" || p.N == "bw1" {
+					rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
+					for l := 0; l < len(p.D); l += p.S[0] {
+						if rng.Next() > dropout {
+							continue
 						}
-					} else if p.N == "bw1" || p.N == "bb1" {
-						index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
-						for i := 0; i < p.S[1]; i++ {
-							rng := p.Seed
-							for j := 0; j < p.S[0]; j++ {
-								if rng.Next() > dropout {
-									index++
-									continue
-								}
-								deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]*scaling
-								p.X[index] += deltas[k][index]
-								index++
-							}
+						for m, d := range p.D[l : l+p.S[0]] {
+							deltas[k][l+m] = alpha*deltas[k][l+m] - eta*d*scaling
+							p.X[l+m] += deltas[k][l+m]
 						}
 					}
-				} else {
-					for l, d := range p.D {
-						deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
-						p.X[l] += deltas[k][l]
+				} else if p.N == "ab1" || p.N == "bb1" {
+					index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
+					for i := 0; i < p.S[1]; i++ {
+						rng := p.Seed
+						for j := 0; j < p.S[0]; j++ {
+							if rng.Next() > dropout {
+								index++
+								continue
+							}
+							deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]*scaling
+							p.X[index] += deltas[k][index]
+							index++
+						}
 					}
 				}
-			}
-		} else {
-			for k, p := range set.Weights {
-				if p.Seed != 0 {
-					if p.N == "aw1" || p.N == "bw1" {
-						rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
-						for l := 0; l < len(p.D); l += p.S[0] {
-							if rng.Next() > dropout {
-								continue
-							}
-							for m, d := range p.D[l : l+p.S[0]] {
-								deltas[k][l+m] = alpha*deltas[k][l+m] - eta*d
-								p.X[l+m] += deltas[k][l+m]
-							}
-						}
-					} else if p.N == "bw1" || p.N == "bb1" {
-						index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
-						for i := 0; i < p.S[1]; i++ {
-							rng := p.Seed
-							for j := 0; j < p.S[0]; j++ {
-								if rng.Next() > dropout {
-									index++
-									continue
-								}
-								deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]
-								p.X[index] += deltas[k][index]
-								index++
-							}
-						}
-					}
-				} else {
-					for l, d := range p.D {
-						deltas[k][l] = alpha*deltas[k][l] - eta*d
-						p.X[l] += deltas[k][l]
-					}
+			} else {
+				for l, d := range p.D {
+					deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
+					p.X[l] += deltas[k][l]
 				}
 			}
 		}
