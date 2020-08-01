@@ -71,9 +71,9 @@ func main() {
 	}
 
 	set := tf32.NewSet()
-	set.Add("aw1", Width, 2*Width)
-	set.Add("ab1", 2*Width)
-	set.Add("aw2", 4*Width, 10)
+	set.Add("aw1", Width, 4*Width)
+	set.Add("ab1", 4*Width)
+	set.Add("aw2", 8*Width, 10)
 	set.Add("ab2", 10)
 
 	for i := range set.Weights {
