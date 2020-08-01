@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"time"
 
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
@@ -53,9 +54,9 @@ func main() {
 		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
-	image := tf32.NewV(Width, 1)
+	image := tf32.NewV(Width, 100)
 	image.X = image.X[:cap(image.X)]
-	label := tf32.NewV(20, 1)
+	label := tf32.NewV(20, 100)
 	label.X = label.X[:cap(label.X)]
 
 	indexes := make([]int, len(datum.Train.Images))
@@ -65,7 +66,7 @@ func main() {
 
 	l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw1"), image.Meta()), set.Get("ab1")))
 	l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
-	cost := tf32.Quadratic(label.Meta(), l2)
+	cost := tf32.Avg(tf32.Quadratic(label.Meta(), l2))
 
 	iterations := 10
 	alpha, eta := float32(.3), float32(.3)
@@ -77,7 +78,8 @@ func main() {
 		}
 
 		total := float32(0.0)
-		for i, index := range indexes {
+		start := time.Now()
+		for i := 0; i < len(indexes); i += 100 {
 			weights := set.ByName["aw1"]
 			weights.Seed = tf32.RNG(i + 1)
 			weights.Drop = .5
@@ -89,15 +91,23 @@ func main() {
 			set.Zero()
 			image.Zero()
 			label.Zero()
-			for j, value := range datum.Train.Images[index] {
-				image.X[j] = float32(value) / 255
+			index := 0
+			for j := 0; j < 100; j++ {
+				for _, value := range datum.Train.Images[indexes[i+j]] {
+					image.X[index] = float32(value) / 255
+					index++
+				}
 			}
 			for j := range label.X {
 				label.X[j] = 0
 			}
-			label.X[2*datum.Train.Labels[index]+1] = 1
+			index = 0
+			for j := 0; j < 100; j++ {
+				label.X[index+2*int(datum.Train.Labels[indexes[i+j]])+1] = 1
+				index += 20
+			}
 
-			t := tf32.Gradient(cost).X[0]
+			total += tf32.Gradient(cost).X[0]
 			norm := float32(0)
 			for _, p := range set.Weights {
 				for _, d := range p.D {
@@ -122,11 +132,11 @@ func main() {
 				}
 			}
 
-			total += t
 			if i%1000 == 0 {
-				fmt.Println(i, total)
+				fmt.Print(".")
 			}
 		}
+		fmt.Printf("\n")
 
 		err := set.Save(fmt.Sprintf("weights_%d.w", i), total, i)
 		if err != nil {
@@ -134,8 +144,8 @@ func main() {
 		}
 
 		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
-		fmt.Println(total)
-
+		fmt.Println(i, total, time.Now().Sub(start))
+		start = time.Now()
 	}
 
 	p, err := plot.New()
