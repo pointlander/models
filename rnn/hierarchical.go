@@ -654,19 +654,19 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 		if *FlagDropout {
 			weights := set.ByName["aw1"]
 			weights.Seed = tf32.RNG(seed)
-			weights.Drop = .5
+			weights.Drop = .2
 
 			weights = set.ByName["ab1"]
 			weights.Seed = tf32.RNG(seed)
-			weights.Drop = .5
+			weights.Drop = .2
 
 			weights = set.ByName["bw1"]
 			weights.Seed = tf32.RNG(seed)
-			weights.Drop = .5
+			weights.Drop = .2
 
 			weights = set.ByName["bb1"]
 			weights.Seed = tf32.RNG(seed)
-			weights.Drop = .5
+			weights.Drop = .2
 		}
 
 		l1 := activation(tf32.Add(tf32.Mul(set.Get("aw1"), tf32.Concat(symbols[0].Meta(), initial.Meta())), set.Get("ab1")))

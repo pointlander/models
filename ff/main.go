@@ -68,7 +68,7 @@ func main() {
 	cost := tf32.Quadratic(label.Meta(), l2)
 
 	iterations := 10
-	alpha, eta := float32(.3), float32(.5)
+	alpha, eta := float32(.3), float32(.3)
 	points := make(plotter.XYs, 0, iterations)
 	for i := 0; i < iterations; i++ {
 		for i := range indexes {
@@ -90,9 +90,7 @@ func main() {
 			image.Zero()
 			label.Zero()
 			for j, value := range datum.Train.Images[index] {
-				if value != 0 {
-					image.X[j] = 1
-				}
+				image.X[j] = float32(value) / 255
 			}
 			for j := range label.X {
 				label.X[j] = 0
