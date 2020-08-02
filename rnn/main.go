@@ -59,24 +59,8 @@ var (
 	FlagLearn = flag.String("learn", "", "learning mode")
 	// FlagGraph graphs the model files
 	FlagGraph = flag.String("graph", "", "graph mode")
-	// FlagWordsModel the words model
-	FlagWordsModel = flag.String("wordsModel", "", "the words model file")
-	// FlagPhrasesModel the phrases model
-	FlagPhrasesModel = flag.String("phrasesModel", "", "the phrase seq2seq model")
 	// FlagInference load weights and generate probable strings
 	FlagInference = flag.String("inference", "", "inference mode")
-	// FlagBuildDB build the vector db
-	FlagBuildDB = flag.Bool("db", false, "build the vector db")
-	// FlagWords test words seq2seq model
-	FlagWords = flag.String("words", "", "test words seq2seq model")
-	// FlagBrain test words with bfloat16
-	FlagBrain = flag.Bool("brain", false, "test words with bfloat16")
-	// FlagSearch search the bible
-	FlagSearch = flag.Bool("search", false, "search the bible")
-	// FlagSparse sparse mode
-	FlagSparse = flag.Bool("sparse", false, "sparse mode")
-	// FlagDropout dropout mode
-	FlagDropout = flag.Bool("dropout", false, "dropout mode")
 )
 
 // Testament is a bible testament
@@ -108,30 +92,11 @@ func main() {
 			FixedLearn()
 		case "variable":
 			VariableLearn()
-		case "hierarchical":
-			HierarchicalLearn(tf32.Everett)
-		case "hierarchical_experiment":
-			HierarchicalLearn(tf32.EverettReLu)
-		case "hierarchical_sentence":
-			HierarchicalSentenceLearn(*FlagWordsModel)
 		}
 
 		return
-	} else if *FlagBuildDB {
-		BuildVectorDB(*FlagWordsModel, *FlagPhrasesModel)
-		return
-	} else if *FlagSearch {
-		Search(*FlagWordsModel, *FlagPhrasesModel)
-		return
 	} else if *FlagInference != "" {
-		if *FlagWords == "everett" {
-			WordsInference(tf32.Everett)
-		} else if *FlagWords == "relu" {
-			WordsInference(tf32.EverettReLu)
-		} else {
-			Inference()
-		}
-		return
+		Inference()
 	} else if *FlagGraph != "" {
 		Graph(*FlagGraph)
 		return

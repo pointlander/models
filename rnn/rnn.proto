@@ -1,9 +1,0 @@
-syntax = "proto3";
-package main;
-
-option go_package = ".;main";
-
-message Vector {
-  uint64 verse = 1;
-  repeated uint32 vector = 2;
-}
