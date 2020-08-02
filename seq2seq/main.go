@@ -8,12 +8,10 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
 	"path"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -27,6 +25,7 @@ import (
 	"gonum.org/v1/plot/vg"
 	"gonum.org/v1/plot/vg/draw"
 
+	"github.com/pointlander/datum/bible"
 	"github.com/pointlander/gradient/tf32"
 )
 
@@ -48,16 +47,6 @@ const (
 var (
 	// Nets the number of nets to run in parallel
 	Nets = runtime.NumCPU()
-	// PatternBook marks the start of a book
-	PatternBook = regexp.MustCompile(`\r\n\r\n\r\n\r\n[A-Za-z]+([ \t]+[A-Za-z:]+)*\r\n\r\n`)
-	// PatternVerse is a verse
-	PatternVerse = regexp.MustCompile(`\d+[:]\d+[A-Za-z:.,?!;"' ()\t\r\n]+`)
-	// PatternSentence is a sentence
-	PatternSentence = regexp.MustCompile(`[.,?!;]`)
-	// PatternWord is for splitting into words
-	PatternWord = regexp.MustCompile(`[ \t\r\n]+`)
-	// WordCutSet is the trim cut set for a word
-	WordCutSet = ".,?!:;\"' ()\t\r\n"
 	// FlagVerbose enables verbose mode
 	FlagVerbose = flag.Bool("verbose", false, "verbose mode")
 	// FlagLearn learn the model
@@ -136,7 +125,22 @@ func main() {
 		return
 	}
 
-	verses, sentences, words, max, maxWords := Verses()
+	bible, err := bible.Load()
+	if err != nil {
+		panic(err)
+	}
+	verses := bible.GetVerses()
+	maxVerse, maxWords := 0, 0
+	for _, verse := range verses {
+		if length := len(verse.Verse); length > maxVerse {
+			maxVerse = length
+		}
+		if length := len(verse.Words); length > maxWords {
+			maxWords = length
+		}
+	}
+	sentences := bible.GetSentences()
+	words := bible.GetWords()
 	maxWord := 0
 	for _, word := range words {
 		if length := len(word); length > maxWord {
@@ -145,7 +149,7 @@ func main() {
 	}
 	fmt.Printf("number of verses %d\n", len(verses))
 	fmt.Printf("number of sentences %d\n", len(sentences))
-	fmt.Printf("max verse length %d\n", max)
+	fmt.Printf("max verse length %d\n", maxVerse)
 	fmt.Printf("max words in verse %d\n", maxWords)
 	fmt.Printf("number of unique words %d\n", len(words))
 	fmt.Printf("max word length %d\n", maxWord)
@@ -238,7 +242,11 @@ func Similarity(a, b []float32) float32 {
 
 // Search search the bible
 func Search(wordsModel, phrasesModel string) {
-	verses, _, _, _, _ := Verses()
+	book, err := bible.Load()
+	if err != nil {
+		panic(err)
+	}
+	verses := book.GetVerses()
 	fmt.Println("verses", len(verses))
 
 	options := bolt.Options{
@@ -384,10 +392,10 @@ func Search(wordsModel, phrasesModel string) {
 				fmt.Println(result.Word)
 			}
 		default:
-			words := PatternWord.Split(query, -1)
+			words := bible.PatternWord.Split(query, -1)
 			symbols := make([]tf32.V, 0, len(words))
 			for _, word := range words {
-				word = strings.Trim(word, WordCutSet)
+				word = strings.Trim(word, bible.WordCutSet)
 				if word == "" {
 					continue
 				}
@@ -444,7 +452,12 @@ func Search(wordsModel, phrasesModel string) {
 // BuildVectorDB builds the vector database
 func BuildVectorDB(wordsModel, phrasesModel string) {
 	start := time.Now()
-	verses, _, words, _, _ := Verses()
+	book, err := bible.Load()
+	if err != nil {
+		panic(err)
+	}
+	verses := book.GetVerses()
+	words := book.GetWords()
 	fmt.Println("verses", len(verses))
 	fmt.Println("words", len(words))
 
@@ -554,16 +567,16 @@ func BuildVectorDB(wordsModel, phrasesModel string) {
 			return err
 		}
 		for i, verse := range verses {
-			phrases := PatternSentence.Split(verse.Verse, -1)
+			phrases := bible.PatternSentence.Split(verse.Verse, -1)
 			for _, phrase := range phrases {
-				phrase = strings.Trim(phrase, WordCutSet)
+				phrase = strings.Trim(phrase, bible.WordCutSet)
 				if len(phrase) == 0 {
 					continue
 				}
-				words := PatternWord.Split(phrase, -1)
+				words := bible.PatternWord.Split(phrase, -1)
 				symbols := make([]tf32.V, 0, len(words))
 				for _, word := range words {
-					word = strings.Trim(word, WordCutSet)
+					word = strings.Trim(word, bible.WordCutSet)
 					if word == "" {
 						continue
 					}
@@ -612,7 +625,11 @@ func BuildVectorDB(wordsModel, phrasesModel string) {
 
 // WordsInference test words seq2seq
 func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
-	_, _, words, _, _ := Verses()
+	bible, err := bible.Load()
+	if err != nil {
+		panic(err)
+	}
+	words := bible.GetWords()
 	fmt.Println(len(words))
 
 	set := tf32.NewSet()
@@ -783,7 +800,11 @@ func WordsInference(activation func(a tf32.Meta) tf32.Meta) {
 
 // HierarchicalLearn learns the hierarchical encoder decoder rnn model for words
 func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
-	_, _, words, _, _ := Verses()
+	bible, err := bible.Load()
+	if err != nil {
+		panic(err)
+	}
+	words := bible.GetWords()
 	fmt.Println(len(words))
 	initial := tf32.NewV(2*Space, 1)
 	initial.X = initial.X[:cap(initial.X)]
@@ -1020,7 +1041,12 @@ func HierarchicalLearn(activation func(a tf32.Meta) tf32.Meta) {
 // HierarchicalSentenceLearn learns the hierarchical encoder decoder rnn model
 // for sentences
 func HierarchicalSentenceLearn(wordsModel string) {
-	_, sentences, words, _, _ := Verses()
+	book, err := bible.Load()
+	if err != nil {
+		panic(err)
+	}
+	sentences := book.GetSentences()
+	words := book.GetWords()
 	fmt.Println("words", len(words))
 	fmt.Println("sentences", len(sentences))
 
@@ -1091,10 +1117,10 @@ func HierarchicalSentenceLearn(wordsModel string) {
 
 	done := make(chan float32, 8)
 	learn := func(set *tf32.Set, sentence string) {
-		words := PatternWord.Split(sentence, -1)
+		words := bible.PatternWord.Split(sentence, -1)
 		symbols := make([]tf32.V, 0, len(words))
 		for _, word := range words {
-			word = strings.Trim(word, WordCutSet)
+			word = strings.Trim(word, bible.WordCutSet)
 			if word == "" {
 				continue
 			}
@@ -1216,112 +1242,6 @@ func HierarchicalSentenceLearn(wordsModel string) {
 	if err != nil {
 		panic(err)
 	}
-}
-
-// Verses gets the bible verses
-func Verses() ([]Verse, []string, []string, int, int) {
-	testaments, verses, sentences, words, max :=
-		Bible(), make([]Verse, 0, NumberOfVerses), make([]string, 0, 8), make([]string, 0, 8), 0
-	for _, testament := range testaments {
-		if *FlagVerbose {
-			fmt.Printf("%s\n\n", testament.Name)
-		}
-		for _, book := range testament.Books {
-			if *FlagVerbose {
-				fmt.Printf(" %s\n", book.Name)
-			}
-			for _, verse := range book.Verses {
-				if *FlagVerbose {
-					fmt.Printf("  %s %s\n", verse.Number, verse.Verse)
-				}
-				if length := len(verse.Verse); length > max {
-					max = length
-				}
-				verses = append(verses, verse)
-			}
-			if *FlagVerbose {
-				fmt.Printf("\n")
-			}
-		}
-		if *FlagVerbose {
-			fmt.Printf("\n")
-		}
-	}
-	if len(verses) != NumberOfVerses {
-		panic("wrong number of verses")
-	}
-	seen, maxWords := make(map[string]bool), 0
-	for _, verse := range verses {
-		verseSentences := PatternSentence.Split(verse.Verse, -1)
-		for _, sentence := range verseSentences {
-			sentence = strings.Trim(sentence, WordCutSet)
-			if len(sentence) == 0 {
-				continue
-			}
-			sentences = append(sentences, sentence)
-		}
-		verseWords := PatternWord.Split(verse.Verse, -1)
-		if length := len(verseWords); length > maxWords {
-			maxWords = length
-		}
-		for _, word := range verseWords {
-			word = strings.Trim(word, WordCutSet)
-			if seen[word] || len(word) == 0 {
-				continue
-			}
-			seen[word] = true
-			words = append(words, word)
-		}
-	}
-	return verses, sentences, words, max, maxWords
-}
-
-// Bible returns the bible
-func Bible() []Testament {
-	data, err := ioutil.ReadFile("pg10.txt")
-	if err != nil {
-		panic(err)
-	}
-	bible := string(data)
-	beginning := strings.Index(bible, "*** START OF THIS PROJECT GUTENBERG EBOOK THE KING JAMES BIBLE ***")
-	ending := strings.Index(bible, "End of the Project Gutenberg EBook of The King James Bible")
-	bible = bible[beginning:ending]
-	testaments := make([]Testament, 2)
-	testaments[0].Name = "The Old Testament of the King James Version of the Bible"
-	testaments[1].Name = "The New Testament of the King James Bible"
-
-	a := strings.Index(bible, testaments[0].Name)
-	b := strings.Index(bible, testaments[1].Name)
-	parse := func(t *Testament, testament string) {
-		books := PatternBook.FindAllStringIndex(testament, -1)
-		for i, book := range books {
-			b := Book{
-				Name: strings.TrimSpace(testament[book[0]:book[1]]),
-			}
-			end := len(testament)
-			if i+1 < len(books) {
-				end = books[i+1][0]
-			}
-			content := testament[book[1]:end]
-			lines := PatternVerse.FindAllStringIndex(content, -1)
-			for _, line := range lines {
-				l := strings.TrimSpace(strings.ReplaceAll(content[line[0]:line[1]], "\r\n", " "))
-				a := strings.Index(l, " ")
-				verse := Verse{
-					Testament: t.Name,
-					Book:      b.Name,
-					Number:    strings.TrimSpace(l[:a]),
-					Verse:     strings.TrimSpace(l[a:]),
-				}
-				b.Verses = append(b.Verses, verse)
-			}
-			t.Books = append(t.Books, b)
-		}
-	}
-	parse(&testaments[0], bible[a:b])
-	parse(&testaments[1], bible[b:])
-
-	return testaments
 }
 
 // Random32 return a random float32

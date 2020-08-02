@@ -47,6 +47,9 @@ github.com/pointlander/compress v1.1.0/go.mod h1:q5NXNGzqj5uPnVuhGkZfmgHqNUhf15V
 github.com/pointlander/compress v1.1.1-0.20190518213731-ff44bd196cc3 h1:hUmXhbljNFtrH5hzV9kiRoddZ5nfPTq3K0Sb2hYYiqE=
 github.com/pointlander/compress v1.1.1-0.20190518213731-ff44bd196cc3/go.mod h1:q5NXNGzqj5uPnVuhGkZfmgHqNUhf15VLi6L9kW0VEc0=
 github.com/pointlander/datum v0.0.0-20190623194735-23144a0e8e67 h1:qvDod2AJUnWMff/lIpGCe4o3o9Uhhl5lTOBpvnJywxY=
+github.com/pointlander/datum v0.0.0-20200802052503-0ee610caba95 h1:eOo7aXJ4J1otQe2+X7JUpMeVJ62x9DCrbifAqeiCT88=
+github.com/pointlander/datum/bible v0.0.0-20200802052503-0ee610caba95 h1:r9nGTxfUCT1rIykjHUpxyVV/qwk7fpehUOTJ3l6yUpE=
+github.com/pointlander/datum/bible v0.0.0-20200802052503-0ee610caba95/go.mod h1:b2umfZe9qgshsHmKqBKpSwt5+omF6humO+oLoE94W+c=
 github.com/pointlander/datum/mnist v0.0.0-20190623194735-23144a0e8e67 h1:MhPWx/2DWkkRL2Sa12mHya32hYpov18V18g0nGR7X9g=
 github.com/pointlander/datum/mnist v0.0.0-20190623194735-23144a0e8e67/go.mod h1:r+4ElDtPuwqjc5k9xaL4iBsyYvpHnLQkl3TN4jV3mNY=
 github.com/pointlander/gradient v0.0.0-20200515193936-fbabc2726477 h1:/qGKvUU9xjOcql+fScOsNazdfavb9U8RiWPfn+oSNJE=

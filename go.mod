@@ -10,6 +10,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/pkg/term v0.0.0-20200520122047-c3ffed290a03 // indirect
 	github.com/pointlander/compress v1.1.1-0.20190518213731-ff44bd196cc3
+	github.com/pointlander/datum/bible v0.0.0-20200802052503-0ee610caba95
 	github.com/pointlander/datum/mnist v0.0.0-20190623194735-23144a0e8e67
 	github.com/pointlander/gradient v0.0.0-20200730041908-6d4de89b0bc2
 	gonum.org/v1/netlib v0.0.0-20200317120129-c5a04cffd98a // indirect
