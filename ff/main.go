@@ -21,8 +21,12 @@ const (
 	Width = mnist.Width * mnist.Height
 )
 
-// FlagTest test a model
-var FlagTest = flag.String("test", "", "test a model")
+var (
+	// FlagAdaptive adaptive weight update mode
+	FlagAdaptive = flag.Bool("adaptive", false, "adaptive weight update mode")
+	// FlagTest test a model
+	FlagTest = flag.String("test", "", "test a model")
+)
 
 func main() {
 	rand.Seed(1)
@@ -110,7 +114,6 @@ func main() {
 	cost := tf32.Avg(tf32.Quadratic(label.Meta(), l2))
 
 	iterations := 30
-	alpha, eta := float32(.3), float32(.3)
 	points := make(plotter.XYs, 0, iterations)
 	for i := 0; i < iterations; i++ {
 		for i := range indexes {
@@ -161,38 +164,48 @@ func main() {
 				scaling = 1 / norm
 			}
 
-			for k, p := range set.Weights {
-				if p.Seed != 0 {
-					if p.N == "aw1" {
-						rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
-						for l := 0; l < len(p.D); l += p.S[0] {
-							if rng.Next() > dropout {
-								continue
-							}
-							for m, d := range p.D[l : l+p.S[0]] {
-								deltas[k][l+m] = alpha*deltas[k][l+m] - eta*d*scaling
-								p.X[l+m] += deltas[k][l+m]
-							}
-						}
-					} else if p.N == "ab1" {
-						index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
-						for i := 0; i < p.S[1]; i++ {
-							rng := p.Seed
-							for j := 0; j < p.S[0]; j++ {
+			if *FlagAdaptive {
+				alpha, eta := float32(.3), float32(.3)
+				for k, p := range set.Weights {
+					if p.Seed != 0 {
+						if p.N == "aw1" {
+							rng, dropout := p.Seed, uint32((1-p.Drop)*math.MaxUint32)
+							for l := 0; l < len(p.D); l += p.S[0] {
 								if rng.Next() > dropout {
-									index++
 									continue
 								}
-								deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]*scaling
-								p.X[index] += deltas[k][index]
-								index++
+								for m, d := range p.D[l : l+p.S[0]] {
+									deltas[k][l+m] = alpha*deltas[k][l+m] - eta*d*scaling
+									p.X[l+m] += deltas[k][l+m]
+								}
+							}
+						} else if p.N == "ab1" {
+							index, dropout := 0, uint32((1-p.Drop)*math.MaxUint32)
+							for i := 0; i < p.S[1]; i++ {
+								rng := p.Seed
+								for j := 0; j < p.S[0]; j++ {
+									if rng.Next() > dropout {
+										index++
+										continue
+									}
+									deltas[k][index] = alpha*deltas[k][index] - eta*p.D[index]*scaling
+									p.X[index] += deltas[k][index]
+									index++
+								}
 							}
 						}
+					} else {
+						for l, d := range p.D {
+							deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
+							p.X[l] += deltas[k][l]
+						}
 					}
-				} else {
+				}
+			} else {
+				eta := float32(.3)
+				for _, p := range set.Weights {
 					for l, d := range p.D {
-						deltas[k][l] = alpha*deltas[k][l] - eta*d*scaling
-						p.X[l] += deltas[k][l]
+						p.X[l] -= eta * d * scaling
 					}
 				}
 			}
