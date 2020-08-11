@@ -113,7 +113,7 @@ func main() {
 	l2 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("aw2"), l1), set.Get("ab2")))
 	cost := tf32.Avg(tf32.Quadratic(label.Meta(), l2))
 
-	iterations := 30
+	iterations, seed := 30, tf32.RNG(1)
 	points := make(plotter.XYs, 0, iterations)
 	for i := 0; i < iterations; i++ {
 		for i := range indexes {
@@ -125,12 +125,13 @@ func main() {
 		start := time.Now()
 		for i := 0; i < len(indexes); i += 100 {
 			weights := set.ByName["aw1"]
-			weights.Seed = tf32.RNG(i + 1)
+			weights.Seed = seed
 			weights.Drop = .5
 
 			weights = set.ByName["ab1"]
-			weights.Seed = tf32.RNG(i + 1)
+			weights.Seed = seed
 			weights.Drop = .5
+			seed++
 
 			set.Zero()
 			image.Zero()
