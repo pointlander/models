@@ -82,6 +82,8 @@ github.com/pointlander/gradient v0.0.0-20200730041908-6d4de89b0bc2 h1:y6RQidgCpH
 github.com/pointlander/gradient v0.0.0-20200730041908-6d4de89b0bc2/go.mod h1:iN+6aN93H4v3zaNxWpVr92iXb8e73+3DRbnJftNZbdY=
 github.com/pointlander/gradient v0.0.0-20200806002301-5b28906eb28e h1:d4knbQGGh8bH/fRODAOpmg4ajIbWit5V1bW6MSmgagY=
 github.com/pointlander/gradient v0.0.0-20200806002301-5b28906eb28e/go.mod h1:omn6KDIN5DaaxLkTo3wM1WP1CFHN+izYD7FWjDdPlXU=
+github.com/pointlander/gradient v0.0.0-20200814000830-b126fd27ad01 h1:mNtuskKt7NpIixWa1WmA0C9Ja8tsrTddUEYllU+sk9k=
+github.com/pointlander/gradient v0.0.0-20200814000830-b126fd27ad01/go.mod h1:omn6KDIN5DaaxLkTo3wM1WP1CFHN+izYD7FWjDdPlXU=
 github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=
 github.com/remyoudompheng/bigfft v0.0.0-20190728182440-6a916e37a237/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/ziutek/blas v0.0.0-20190227122918-da4ca23e90bb h1:uWiILQloLUVdtPYr1ZZo2zqtlpzo4G8vUpglo/Fs2H8=
