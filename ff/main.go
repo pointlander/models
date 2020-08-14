@@ -19,6 +19,8 @@ import (
 const (
 	// Width is the width of the neural network
 	Width = mnist.Width * mnist.Height
+	// BatchSize is the size of a batch
+	BatchSize = 100
 )
 
 var (
@@ -99,9 +101,9 @@ func main() {
 		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
-	image := tf32.NewV(Width, 100)
+	image := tf32.NewV(Width, BatchSize)
 	image.X = image.X[:cap(image.X)]
-	label := tf32.NewV(20, 100)
+	label := tf32.NewV(20, BatchSize)
 	label.X = label.X[:cap(label.X)]
 
 	indexes := make([]int, len(datum.Train.Images))
@@ -123,7 +125,7 @@ func main() {
 
 		total := float32(0.0)
 		start := time.Now()
-		for i := 0; i < len(indexes); i += 100 {
+		for i := 0; i < len(indexes); i += BatchSize {
 			weights := set.ByName["aw1"]
 			weights.Seed = seed
 			weights.Drop = .5
@@ -137,7 +139,7 @@ func main() {
 			image.Zero()
 			label.Zero()
 			index := 0
-			for j := 0; j < 100; j++ {
+			for j := 0; j < BatchSize; j++ {
 				for _, value := range datum.Train.Images[indexes[i+j]] {
 					image.X[index] = float32(value) / 255
 					index++
@@ -147,7 +149,7 @@ func main() {
 				label.X[j] = 0
 			}
 			index = 0
-			for j := 0; j < 100; j++ {
+			for j := 0; j < BatchSize; j++ {
 				label.X[index+2*int(datum.Train.Labels[indexes[i+j]])+1] = 1
 				index += 20
 			}
